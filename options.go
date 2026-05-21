@@ -6,6 +6,9 @@ func (c *Client) APIID() int { return c.config.APIID }
 // APIHash returns the configured API hash.
 func (c *Client) APIHash() string { return c.config.APIHash }
 
+// SessionName returns the configured session name.
+func (c *Client) SessionName() string { return c.config.SessionName }
+
 // UpdatesEnabled reports whether update handlers are enabled.
 func (c *Client) UpdatesEnabled() bool { return c.config.Updates }
 

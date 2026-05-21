@@ -25,6 +25,7 @@ type DifferenceResult struct {
 	Constructor uint32
 	State       *UpdatesState
 	Messages    []TextMessage
+	Users       []PeerRef
 	Raw         []byte
 }
 
@@ -78,6 +79,10 @@ func parseDifferenceResult(body []byte) (*DifferenceResult, error) {
 		return nil, err
 	}
 	out := &DifferenceResult{Constructor: constructor, Raw: append([]byte(nil), body...)}
+	out.Users = scanUserRefs(body)
+	if scannedState := scanUpdatesState(body); scannedState != nil {
+		out.State = scannedState
+	}
 	switch constructor {
 	case constructorDifferenceEmpty:
 		date, err := r.int()
@@ -104,8 +109,9 @@ func parseDifferenceResult(body []byte) (*DifferenceResult, error) {
 			return out, nil
 		}
 		out.Messages = messages
-		// new_encrypted_messages, other_updates, chats, users are intentionally kept raw in V11.
-		// A full generated TL parser will replace this small hand-written parser later.
+		// V12 scans the raw difference body for users/access_hash and final updates.state
+		// so the high-level MTProto bot loop can reply to private messages while the
+		// full generated TL parser is still being built.
 		return out, nil
 	default:
 		return nil, fmt.Errorf("mtproto: expected updates.Difference, got 0x%08x", constructor)
@@ -414,7 +420,7 @@ func skipRawVector(r *tlReader) error {
 	}
 	for i := 0; i < int(count); i++ {
 		// Unknown object: this tiny parser cannot safely skip arbitrary TL objects.
-		return fmt.Errorf("mtproto: raw vector with %d objects is not supported by the tiny V11 parser", count)
+		return fmt.Errorf("mtproto: raw vector with %d objects is not supported by the tiny V12 parser", count)
 	}
 	return nil
 }

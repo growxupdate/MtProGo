@@ -31,7 +31,7 @@ func mustInt64(label string) int64 {
 }
 
 func main() {
-	fmt.Println("MtProGo V11 pure MTProto sendMessage")
+	fmt.Println("MtProGo V12 pure MTProto sendMessage")
 	fmt.Println("Note: inputPeerUser/inputPeerChannel require the Telegram access_hash.")
 	fmt.Println("Bots normally learn access_hash values from MTProto updates or dialogs; that update loop is planned for the next update-loop milestone.")
 	fmt.Println()

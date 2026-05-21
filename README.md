@@ -4,7 +4,7 @@ MtProGo is a pure Go Telegram client project focused on a clean API, low memory 
 
 This repository intentionally does **not** import or wrap TDLib, gotd, tgbotapi, Telethon, Pyrogram, Kurigram, or any other Telegram client library.
 
-## Current V11 status
+## Current V13 status
 
 Working now:
 
@@ -16,15 +16,18 @@ Working now:
 - Pure MTProto bot authorization with DC migration handling
 - Pure MTProto account phone-code login
 - Pure MTProto SRP 2FA password login
-- Configurable update handling
-- Configurable bounded message cache
-- Configurable bounded peer cache
+- Experimental pure MTProto bot updates loop using `updates.getDifference`
+- Experimental pure MTProto private `/start`, `/ping`, `/help` receive/reply example
+- Persistent MTProto sessions for bots and user accounts
+- File sessions, encrypted file sessions, and copy-paste string sessions
+- Configurable update handling, bounded message cache, and bounded peer cache
 - No external Go dependencies
 
 Still in progress:
 
 - Full generated TL API
-- Full MTProto updates dispatcher
+- Full generated MTProto updates parser for every update type
+- Group/channel peer parsing for MTProto updates
 - High-level Kurigram/Pyrogram-style helpers for every Telegram method
 - Media upload/download helpers
 
@@ -34,47 +37,104 @@ Still in progress:
 go get github.com/growxupdate/MtProGo@main
 ```
 
-## Basic bot example
+## Pure MTProto bot with persistent session
+
+First run creates `bot.session`. Later runs load it and skip auth-key generation and `auth.importBotAuthorization`, which makes startup faster and lighter.
+
+```bash
+go run ./examples/mtproto_bot_updates
+```
+
+Minimal code:
 
 ```go
-package main
+bot := mtprogo.Must(mtprogo.NewMTProtoBot(
+    mtprogo.MTProtoBotConfig{
+        APIID:   apiID,
+        APIHash: apiHash,
+        Token:   botToken,
+    },
+    mtprogo.WithSessionFile("bot.session"),
+    mtprogo.WithUpdates(true),
+    mtprogo.WithMessageCacheSize(1000),
+    mtprogo.WithPeerCacheSize(1000),
+    mtprogo.WithMessageCacheCommands("start", "ping", "help"),
+))
 
-import (
-    "context"
+bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
+    return m.Reply(ctx, "Hello from pure MTProto")
+})
 
-    mtprogo "github.com/growxupdate/MtProGo"
-    "github.com/growxupdate/MtProGo/filters"
-    "github.com/growxupdate/MtProGo/updates"
-)
+mtprogo.Must0(bot.Run(context.Background()))
+```
 
-func main() {
-    bot := mtprogo.Must(mtprogo.NewBotWithOptions(
-        mtprogo.BotConfig{Token: "BOT_TOKEN"},
-        mtprogo.WithUpdates(true),
-        mtprogo.WithMessageCacheSize(1000),
-        mtprogo.WithPeerCacheSize(1000),
-    ))
+Encrypted session file:
 
-    bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
-        return m.Reply(ctx, "Hello from MtProGo V11 🚀")
-    })
+```go
+bot := mtprogo.Must(mtprogo.NewMTProtoBot(
+    mtprogo.MTProtoBotConfig{APIID: apiID, APIHash: apiHash, Token: botToken},
+    mtprogo.WithEncryptedSessionFile("bot.session", "strong-password"),
+))
+```
 
-    mtprogo.Must0(bot.Run(context.Background()))
-}
+String session import:
+
+```go
+bot := mtprogo.Must(mtprogo.NewMTProtoBot(
+    mtprogo.MTProtoBotConfig{APIID: apiID, APIHash: apiHash, Token: botToken},
+    mtprogo.WithStringSession("MPG1:..."),
+))
+```
+
+Export a string session after login:
+
+```go
+encoded, err := bot.ExportStringSession()
+```
+
+Clear saved session:
+
+```go
+err := bot.ClearSession(context.Background())
+```
+
+## User account persistent session
+
+```bash
+go run ./examples/mtproto_account_login
+```
+
+The first run asks for API ID, API hash, phone number, code, and 2FA password when needed. It saves `account.session` and prints a string session. The next run loads the session and checks `updates.getState` without asking for the phone code again.
+
+## Bot API runtime
+
+The Bot API runtime is still available for simple bots:
+
+```go
+bot := mtprogo.Must(mtprogo.NewBotWithOptions(
+    mtprogo.BotConfig{Token: "BOT_TOKEN"},
+    mtprogo.WithUpdates(true),
+    mtprogo.WithMessageCacheSize(1000),
+    mtprogo.WithPeerCacheSize(1000),
+))
+
+bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
+    return m.Reply(ctx, "Hello from MtProGo V13 🚀")
+})
+
+mtprogo.Must0(bot.Run(context.Background()))
 ```
 
 ## Memory/cache controls
 
-MtProGo V11 lets users decide how much data should stay in RAM.
-
-The default message cache policy is **matched-only**. That means MtProGo does **not** cache every random update. If your bot registers only `/start`, `/ping`, `/help`, and `/queue`, then only messages matching registered handlers are cached by default. This is safer for very large bots because irrelevant messages are processed and dropped instead of being retained in RAM.
+The default message cache policy is **matched-only**. MtProGo does **not** cache every random update. If your bot registers only `/start`, `/ping`, `/help`, and `/queue`, then only messages matching registered handlers are cached by default. Irrelevant updates are processed and dropped instead of retained in RAM.
 
 ```go
 client := mtprogo.Must(mtprogo.New(
     12345,
     "api_hash",
     mtprogo.WithUpdates(true),
-    mtprogo.WithMessageCacheSize(1000), // keep last 1000 messages
+    mtprogo.WithMessageCacheSize(1000), // keep last 1000 useful messages
     mtprogo.WithPeerCacheSize(1000),    // keep last 1000 peers
     mtprogo.WithUpdateQueueSize(256),
 ))
@@ -91,19 +151,6 @@ client := mtprogo.Must(mtprogo.New(
 ))
 ```
 
-
-Selective command cache:
-
-```go
-bot := mtprogo.Must(mtprogo.NewBotWithOptions(
-    mtprogo.BotConfig{Token: token},
-    mtprogo.WithUpdates(true),
-    mtprogo.WithMessageCacheSize(1000),
-    mtprogo.WithPeerCacheSize(1000),
-    mtprogo.WithMessageCacheCommands("start", "ping", "help", "queue"),
-))
-```
-
 Cache policy options:
 
 ```go
@@ -111,98 +158,26 @@ mtprogo.WithMessageCacheMode(mtprogo.CacheMatchedMessages)  // default: cache on
 mtprogo.WithMessageCacheMode(mtprogo.CacheAllMessages)      // cache every incoming message
 mtprogo.WithMessageCacheMode(mtprogo.CacheNone)             // cache nothing
 mtprogo.WithMessageCacheFilter(customFilter)                // cache only messages accepted by your filter
+mtprogo.WithMessageCacheCommands("start", "ping", "help")  // command-only cache
 ```
 
 When the cache limit is full, MtProGo drops the oldest cached message and keeps the newest one. With `WithMessageCacheSize(1000)`, message 1001 evicts message 1.
 
-Disable message cache:
-
-```go
-client := mtprogo.Must(mtprogo.New(
-    12345,
-    "api_hash",
-    mtprogo.WithMessageCacheSize(0),
-))
-```
-
-Disable handler dispatching while still allowing cache population:
-
-```go
-client := mtprogo.Must(mtprogo.New(
-    12345,
-    "api_hash",
-    mtprogo.WithUpdates(false),
-))
-```
-
-Read cache stats:
-
-```go
-snapshot := client.CacheSnapshot()
-println(snapshot.MessageCount, snapshot.MessageLimit)
-println(snapshot.PeerCount, snapshot.PeerLimit)
-```
-
 ## Examples
-
-Run a real bot:
 
 ```bash
 go run ./examples/realbot
-```
-
-Run a real bot with cache options:
-
-```bash
 go run ./examples/realbot_cache
-```
-
-Run local cache option demo:
-
-```bash
 go run ./examples/cache_options
-```
-
-Run selective cache demo with 10,000 simulated updates:
-
-```bash
 go run ./examples/selective_cache
-```
-
-Run real bot with selective command cache:
-
-```bash
 go run ./examples/realbot_selective_cache
-```
-
-Run pure MTProto probe:
-
-```bash
 go run ./examples/mtproto_probe
-```
-
-Generate a pure MTProto auth key:
-
-```bash
 go run ./examples/mtproto_auth
-```
-
-Call encrypted MTProto help.getConfig:
-
-```bash
 go run ./examples/mtproto_config
-```
-
-Login a bot over pure MTProto:
-
-```bash
 go run ./examples/mtproto_bot_login
-```
-
-Login an account over pure MTProto:
-
-```bash
+go run ./examples/mtproto_bot_updates
 go run ./examples/mtproto_account_login
+go run ./examples/mtproto_session_tools
 ```
 
 ## CI

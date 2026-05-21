@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	mtprogo "github.com/growxupdate/MtProGo"
 	"github.com/growxupdate/MtProGo/mtproto"
 )
 
@@ -23,14 +24,23 @@ func ask(label string) string {
 	return strings.TrimSpace(v)
 }
 
+func defaultValue(v, def string) string {
+	if strings.TrimSpace(v) == "" {
+		return def
+	}
+	return strings.TrimSpace(v)
+}
+
 func main() {
-	fmt.Println("MtProGo V11 pure MTProto user account login")
-	fmt.Println("This example sends auth.sendCode, calls auth.signIn, supports SESSION_PASSWORD_NEEDED with SRP 2FA, then checks updates.getState.")
+	fmt.Println("MtProGo V13 pure MTProto user account login with persistent session")
+	fmt.Println("First run logs in and saves account.session. Next run loads it without phone code.")
 	fmt.Println()
 
 	apiIDText := ask("Enter API ID: ")
 	apiHash := ask("Enter API Hash: ")
-	phone := ask("Enter Phone Number (+countrycode...): ")
+	sessionPath := defaultValue(ask("Session file [account.session]: "), "account.session")
+	encPassword := ask("Encrypt session password optional [empty = plain file]: ")
+	stringSession := ask("Paste string session optional [empty = use file/login]: ")
 
 	apiID64, err := strconv.ParseInt(apiIDText, 10, 32)
 	if err != nil || apiID64 <= 0 {
@@ -41,6 +51,59 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
+	var store mtprogo.SessionStore
+	name := "account"
+	if stringSession != "" {
+		sess, err := mtproto.ParseStringSession(stringSession)
+		if err != nil {
+			panic(err)
+		}
+		data, err := sess.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		store = mtprogo.MemorySession()
+		if err := store.Save(ctx, mtprogo.SessionData{Name: name, Data: data}); err != nil {
+			panic(err)
+		}
+	} else if encPassword != "" {
+		store = mtprogo.EncryptedFileSession(sessionPath, encPassword)
+	} else {
+		store = mtprogo.FileSession(sessionPath)
+	}
+
+	if data, ok, err := store.Load(ctx, name); err != nil {
+		fmt.Println("saved session load failed; will login again:", err)
+	} else if ok {
+		sess, err := mtproto.ParseSession(data.Data)
+		if err != nil {
+			fmt.Println("saved session parse failed; will login again:", err)
+		} else {
+			client, err := mtproto.DialEncryptedFromSession(ctx, sess)
+			if err != nil {
+				fmt.Println("saved session connect failed; will login again:", err)
+			} else {
+				defer client.Close()
+				state, stateResult, err := client.UpdatesGetState(ctx)
+				if err != nil {
+					fmt.Println("saved session check failed; clear the session or login again:", err)
+				} else {
+					fmt.Println("Loaded account session OK")
+					fmt.Println("Address:", client.DC().Address)
+					fmt.Println("DC ID:", client.DC().ID)
+					fmt.Println("updates.getState:", stateResult.ConstructorHex(), mtproto.ConstructorName(stateResult.Constructor))
+					fmt.Println("PTS:", state.PTS, "QTS:", state.QTS, "Date:", state.Date, "Seq:", state.Seq)
+					encoded, err := client.ExportSession("user").EncodeString()
+					if err == nil {
+						fmt.Println("String session:", encoded)
+					}
+					return
+				}
+			}
+		}
+	}
+
+	phone := ask("Enter Phone Number (+countrycode...): ")
 	client, sent, err := mtproto.AuthSendCodeDefault(ctx, apiID, apiHash, phone)
 	if err != nil {
 		panic(err)
@@ -77,11 +140,8 @@ func main() {
 			fmt.Println()
 			fmt.Println("account.getPassword OK")
 			fmt.Println("Result constructor:", getPasswordResult.ConstructorHex(), mtproto.ConstructorName(getPasswordResult.Constructor))
-			fmt.Println("Has password:", params.HasPassword)
 			fmt.Println("Hint:", params.Hint)
 			fmt.Println("SRP ID:", params.SRPID)
-			fmt.Println("KDF algo:", params.CurrentAlgo.ConstructorHex(), mtproto.ConstructorName(params.CurrentAlgo.Constructor))
-			fmt.Println("SRP B bytes:", len(params.SRPB))
 
 			loginResult, err = client.AuthCheckPassword(ctx, params, password)
 			if err != nil {
@@ -95,7 +155,6 @@ func main() {
 	fmt.Println()
 	fmt.Println("Account authorization OK")
 	fmt.Println("Result constructor:", loginResult.ConstructorHex(), mtproto.ConstructorName(loginResult.Constructor))
-	fmt.Println("Result bytes:", len(loginResult.Body))
 
 	state, stateResult, err := client.UpdatesGetState(ctx)
 	if err != nil {
@@ -104,9 +163,19 @@ func main() {
 	fmt.Println()
 	fmt.Println("updates.getState OK")
 	fmt.Println("Result constructor:", stateResult.ConstructorHex(), mtproto.ConstructorName(stateResult.Constructor))
-	fmt.Println("PTS:", state.PTS)
-	fmt.Println("QTS:", state.QTS)
-	fmt.Println("Date:", state.Date)
-	fmt.Println("Seq:", state.Seq)
-	fmt.Println("Unread count:", state.UnreadCount)
+	fmt.Println("PTS:", state.PTS, "QTS:", state.QTS, "Date:", state.Date, "Seq:", state.Seq)
+
+	sess := client.ExportSession("user")
+	data, err := sess.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if err := store.Save(ctx, mtprogo.SessionData{Name: name, Data: data}); err != nil {
+		panic(err)
+	}
+	fmt.Println("Session saved:", sessionPath)
+	encoded, err := sess.EncodeString()
+	if err == nil {
+		fmt.Println("String session:", encoded)
+	}
 }

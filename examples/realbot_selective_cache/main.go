@@ -36,7 +36,7 @@ func main() {
 
 	bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
 		s := bot.CacheSnapshot()
-		return m.Reply(ctx, fmt.Sprintf("MtProGo V11 🚀 cache=%s %d/%d", s.CacheMode, s.MessageCount, s.MessageLimit))
+		return m.Reply(ctx, fmt.Sprintf("MtProGo V12 🚀 cache=%s %d/%d", s.CacheMode, s.MessageCount, s.MessageLimit))
 	})
 	bot.OnMessage(filters.Command("ping"), func(ctx context.Context, m *updates.Message) error {
 		return m.Reply(ctx, "pong")

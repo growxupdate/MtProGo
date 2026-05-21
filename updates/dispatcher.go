@@ -122,7 +122,7 @@ func (d *Dispatcher) PutPeer(peer Peer) {
 }
 
 // DispatchMessage dispatches one message to all matching routes.
-// V11 intentionally evaluates filters before caching, so CacheMatchedMessages
+// V12 intentionally evaluates filters before caching, so CacheMatchedMessages
 // stores only useful messages such as registered commands instead of every noisy
 // incoming update. This keeps RAM bounded for very large bots.
 func (d *Dispatcher) DispatchMessage(ctx context.Context, msg *Message) error {

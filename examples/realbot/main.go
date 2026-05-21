@@ -24,7 +24,7 @@ func ask(label string) string {
 }
 
 func main() {
-	fmt.Println("MtProGo V11 Real Bot Example")
+	fmt.Println("MtProGo V12 Real Bot Example")
 	fmt.Println("Version:", mtprogo.Version)
 	fmt.Println()
 
@@ -46,7 +46,7 @@ func main() {
 
 	bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
 		fmt.Println("/start from", m.FromID, "in chat", m.ChatID)
-		return m.Reply(ctx, "Hello from MtProGo V11 🚀")
+		return m.Reply(ctx, "Hello from MtProGo V12 🚀")
 	})
 
 	fmt.Println("Send /start to your bot now.")

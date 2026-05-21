@@ -151,7 +151,7 @@ func makeAuthSendCodeQuery(apiID int, apiHash, phoneNumber string) []byte {
 	inner.putString(apiHash)
 	inner.putInt(constructorCodeSettings)
 	inner.putInt(0) // flags: minimal codeSettings, no optional fields.
-	return wrapWithLayerAndInitConnection(apiID, appVersionV11, inner.bytes())
+	return wrapWithLayerAndInitConnection(apiID, appVersionV12, inner.bytes())
 }
 
 func makeAuthSignInQuery(apiID int, phoneNumber, phoneCodeHash, phoneCode string) []byte {
@@ -161,7 +161,7 @@ func makeAuthSignInQuery(apiID int, phoneNumber, phoneCodeHash, phoneCode string
 	inner.putString(phoneNumber)
 	inner.putString(phoneCodeHash)
 	inner.putString(phoneCode)
-	return wrapWithLayerAndInitConnection(apiID, appVersionV11, inner.bytes())
+	return wrapWithLayerAndInitConnection(apiID, appVersionV12, inner.bytes())
 }
 
 func parseSentCodeResult(phoneNumber string, body []byte) (*SentCodeResult, error) {

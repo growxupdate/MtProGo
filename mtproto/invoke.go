@@ -189,12 +189,17 @@ func (s *encryptedState) invoke(ctx context.Context, conn net.Conn, body []byte)
 	if err != nil {
 		return nil, err
 	}
-	if err := abridgedWrite(conn, packet); err != nil {
-		return nil, err
-	}
 	deadline, ok := ctx.Deadline()
 	if ok {
-		_ = conn.SetReadDeadline(deadline)
+		_ = conn.SetDeadline(deadline)
+	} else {
+		// Keep every RPC bounded, but do not leave the deadline active forever.
+		_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+	}
+	defer conn.SetDeadline(time.Time{})
+
+	if err := abridgedWrite(conn, packet); err != nil {
+		return nil, err
 	}
 	for {
 		payload, err := abridgedRead(conn)
@@ -491,7 +496,7 @@ func makeHelpGetConfigQuery(apiID int) []byte {
 	init.putInt(uint32(int32(apiID)))
 	init.putString("MtProGo")
 	init.putString("Go")
-	init.putString("v11.0.0-dev")
+	init.putString(appVersionV12)
 	init.putString("en")
 	init.putString("")
 	init.putString("en")

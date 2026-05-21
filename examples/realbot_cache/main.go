@@ -44,7 +44,7 @@ func askBool(label string, def bool) bool {
 }
 
 func main() {
-	fmt.Println("MtProGo V11 real bot with memory/cache options")
+	fmt.Println("MtProGo V12 real bot with memory/cache options")
 	fmt.Println("Send /start to your bot after it starts.")
 	fmt.Println()
 
@@ -64,7 +64,7 @@ func main() {
 	bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
 		s := bot.CacheSnapshot()
 		fmt.Printf("/start from %d, cache messages=%d/%d peers=%d/%d\n", m.FromID, s.MessageCount, s.MessageLimit, s.PeerCount, s.PeerLimit)
-		return m.Reply(ctx, fmt.Sprintf("MtProGo V11 🚀 cache=%d/%d", s.MessageCount, s.MessageLimit))
+		return m.Reply(ctx, fmt.Sprintf("MtProGo V12 🚀 cache=%d/%d", s.MessageCount, s.MessageLimit))
 	})
 
 	mtprogo.Must0(bot.Run(context.Background()))

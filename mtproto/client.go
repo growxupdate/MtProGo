@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,7 @@ const (
 // EncryptedClient is a small low-level MTProto client bound to one DC and auth key.
 // It is intentionally raw: callers pass exact TL payloads or use the helpers below.
 type EncryptedClient struct {
+	mu    sync.Mutex
 	conn  net.Conn
 	dc    DCOption
 	auth  *AuthKeyResult
@@ -41,6 +43,9 @@ func DialEncrypted(ctx context.Context, dc DCOption) (*EncryptedClient, error) {
 		_ = conn.Close()
 		return nil, err
 	}
+	// authKeyOnConn uses a temporary deadline for the handshake. Clear it so
+	// long-running update loops do not start failing with stale i/o timeouts.
+	_ = conn.SetDeadline(time.Time{})
 	return &EncryptedClient{
 		conn:  conn,
 		dc:    dc,
@@ -84,6 +89,8 @@ func (c *EncryptedClient) Invoke(ctx context.Context, body []byte) (*InvokeResul
 	if c == nil || c.conn == nil || c.state == nil {
 		return nil, errors.New("mtproto: nil encrypted client")
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	result, err := c.state.invoke(ctx, c.conn, body)
 	if err != nil {
 		return nil, err
@@ -260,7 +267,7 @@ func makeImportBotAuthorizationQuery(apiID int, apiHash, botToken string) []byte
 	inner.putInt(uint32(int32(apiID)))
 	inner.putString(apiHash)
 	inner.putString(botToken)
-	return wrapWithLayerAndInitConnection(apiID, appVersionV11, inner.bytes())
+	return wrapWithLayerAndInitConnection(apiID, appVersionV12, inner.bytes())
 }
 
 func makeMessagesSendMessageQuery(peer InputPeer, text string) ([]byte, error) {
@@ -342,4 +349,4 @@ func ConstructorName(id uint32) string {
 	}
 }
 
-const appVersionV11 = "v11.0.0-dev"
+const appVersionV12 = "v13.0.0-dev"

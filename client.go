@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/growxupdate/MtProGo/filters"
+	"github.com/growxupdate/MtProGo/mtproto"
 	"github.com/growxupdate/MtProGo/updates"
 )
 
@@ -13,6 +14,8 @@ type Config struct {
 	APIID   int
 	APIHash string
 	Session SessionStore
+	// SessionName is the key used when a SessionStore can hold multiple sessions.
+	SessionName string
 
 	// Updates enables handler dispatching. Caching can still work for manual dispatch when disabled.
 	Updates bool
@@ -51,7 +54,7 @@ const (
 type Option func(*Config)
 
 // Client is the base client foundation. The full MTProto runtime builds on
-// this type. V11 adds selective cache controls for high-volume bots.
+// this type. V12 adds selective cache controls for high-volume bots.
 type Client struct {
 	config     Config
 	dispatcher *updates.Dispatcher
@@ -70,6 +73,7 @@ func New(apiID int, apiHash string, opts ...Option) (*Client, error) {
 		APIID:            apiID,
 		APIHash:          apiHash,
 		Session:          MemorySession(),
+		SessionName:      "default",
 		Updates:          true,
 		MessageCacheSize: updates.DefaultMessageCacheSize,
 		MessageCacheMode: updates.CacheMatchedMessages,
@@ -123,6 +127,49 @@ func Must0(err error) {
 func WithMemorySession() Option {
 	return func(c *Config) {
 		c.Session = MemorySession()
+	}
+}
+
+// WithSessionName sets the logical name used in session stores that support multiple sessions.
+func WithSessionName(name string) Option {
+	return func(c *Config) {
+		if name != "" {
+			c.SessionName = name
+		}
+	}
+}
+
+// WithSessionFile uses a plain file-backed session.
+func WithSessionFile(path string) Option {
+	return func(c *Config) {
+		if path != "" {
+			c.Session = FileSession(path)
+		}
+	}
+}
+
+// WithEncryptedSessionFile uses an encrypted file-backed session.
+func WithEncryptedSessionFile(path, password string) Option {
+	return func(c *Config) {
+		if path != "" {
+			c.Session = EncryptedFileSession(path, password)
+		}
+	}
+}
+
+// WithStringSession loads an MTProto string session into memory. The session can
+// be reused without a phone code or bot token authorization when supported by the runtime.
+func WithStringSession(value string) Option {
+	return func(c *Config) {
+		if value == "" {
+			return
+		}
+		sess, err := parseRootStringSession(value)
+		if err != nil {
+			return
+		}
+		c.SessionName = "string"
+		c.Session = memorySessionWithData("string", sess)
 	}
 }
 
@@ -196,6 +243,16 @@ func (c *Client) Dispatcher() *updates.Dispatcher {
 }
 
 // CacheSnapshot returns memory cache statistics.
+func parseRootStringSession(value string) ([]byte, error) {
+	// The low-level mtproto package owns the string-session format; this helper
+	// keeps option construction error-free while still validating the payload.
+	sess, err := mtproto.ParseStringSession(value)
+	if err != nil {
+		return nil, err
+	}
+	return sess.MarshalBinary()
+}
+
 func (c *Client) CacheSnapshot() updates.CacheSnapshot {
 	if c == nil || c.dispatcher == nil {
 		return updates.CacheSnapshot{}
