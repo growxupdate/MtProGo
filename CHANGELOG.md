@@ -1,6 +1,6 @@
 # Changelog
 
-## v8.0.0-dev
+## v9.0.0-dev
 
 - Added pure MTProto user account phone-code login foundation.
 - Added `auth.sendCode` and `auth.signIn` helpers.
@@ -8,7 +8,7 @@
 - Added `updates.getState` helper to verify user/bot authorization state.
 - Kept the repository dependency-free and free of external Telegram client libraries.
 
-## v8.0.0-dev
+## v9.0.0-dev
 
 - Added pure MTProto encrypted client session helper.
 - Added `auth.importBotAuthorization` over encrypted MTProto.

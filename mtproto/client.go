@@ -260,7 +260,7 @@ func makeImportBotAuthorizationQuery(apiID int, apiHash, botToken string) []byte
 	inner.putInt(uint32(int32(apiID)))
 	inner.putString(apiHash)
 	inner.putString(botToken)
-	return wrapWithLayerAndInitConnection(apiID, appVersionV8, inner.bytes())
+	return wrapWithLayerAndInitConnection(apiID, appVersionV9, inner.bytes())
 }
 
 func makeMessagesSendMessageQuery(peer InputPeer, text string) ([]byte, error) {
@@ -316,6 +316,13 @@ func ConstructorName(id uint32) string {
 		return "rpc_error"
 	case constructorGzipPacked:
 		return "gzip_packed"
+	case constructorAccountPassword:
+		return "account.password"
+	case constructorPasswordKDFAlgoSHA256SHA256PBKDF2HMACSHA512Iter100000SHA256ModPow:
+		return "passwordKdfAlgoSHA256SHA256PBKDF2HMACSHA512iter100000SHA256ModPow"
+	case constructorInputCheckPasswordSRP:
+		return "inputCheckPasswordSRP"
+
 	case 0x74ae4240:
 		return "updatesTooLong"
 	case 0x9015e101:
@@ -335,4 +342,4 @@ func ConstructorName(id uint32) string {
 	}
 }
 
-const appVersionV8 = "v8.0.0-dev"
+const appVersionV9 = "v9.0.0-dev"

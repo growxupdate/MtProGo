@@ -24,9 +24,8 @@ func ask(label string) string {
 }
 
 func main() {
-	fmt.Println("MtProGo V8 pure MTProto user account login")
-	fmt.Println("This example sends auth.sendCode, asks for the login code, calls auth.signIn, then checks updates.getState.")
-	fmt.Println("2FA/SRP password login is not implemented in this V8 example yet.")
+	fmt.Println("MtProGo V9 pure MTProto user account login")
+	fmt.Println("This example sends auth.sendCode, calls auth.signIn, supports SESSION_PASSWORD_NEEDED with SRP 2FA, then checks updates.getState.")
 	fmt.Println()
 
 	apiIDText := ask("Enter API ID: ")
@@ -39,7 +38,7 @@ func main() {
 	}
 	apiID := int(apiID64)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
 	client, sent, err := mtproto.AuthSendCodeDefault(ctx, apiID, apiHash, phone)
@@ -69,14 +68,32 @@ func main() {
 		var rpcErr *mtproto.RPCError
 		if errors.As(err, &rpcErr) && strings.Contains(rpcErr.Message, "SESSION_PASSWORD_NEEDED") {
 			fmt.Println("Telegram says SESSION_PASSWORD_NEEDED.")
-			fmt.Println("This account has 2FA enabled. V8 supports phone-code login; SRP password login will be added in the next account-auth milestone.")
-			return
+			password := ask("Enter 2FA Password: ")
+
+			params, getPasswordResult, err := client.AccountGetPassword(ctx)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Println()
+			fmt.Println("account.getPassword OK")
+			fmt.Println("Result constructor:", getPasswordResult.ConstructorHex(), mtproto.ConstructorName(getPasswordResult.Constructor))
+			fmt.Println("Has password:", params.HasPassword)
+			fmt.Println("Hint:", params.Hint)
+			fmt.Println("SRP ID:", params.SRPID)
+			fmt.Println("KDF algo:", params.CurrentAlgo.ConstructorHex(), mtproto.ConstructorName(params.CurrentAlgo.Constructor))
+			fmt.Println("SRP B bytes:", len(params.SRPB))
+
+			loginResult, err = client.AuthCheckPassword(ctx, params, password)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			panic(err)
 		}
-		panic(err)
 	}
 
 	fmt.Println()
-	fmt.Println("auth.signIn OK")
+	fmt.Println("Account authorization OK")
 	fmt.Println("Result constructor:", loginResult.ConstructorHex(), mtproto.ConstructorName(loginResult.Constructor))
 	fmt.Println("Result bytes:", len(loginResult.Body))
 

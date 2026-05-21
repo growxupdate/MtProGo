@@ -491,7 +491,7 @@ func makeHelpGetConfigQuery(apiID int) []byte {
 	init.putInt(uint32(int32(apiID)))
 	init.putString("MtProGo")
 	init.putString("Go")
-	init.putString("v8.0.0-dev")
+	init.putString("v9.0.0-dev")
 	init.putString("en")
 	init.putString("")
 	init.putString("en")

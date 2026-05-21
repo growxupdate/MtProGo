@@ -15,17 +15,17 @@ const (
 	constructorAuthSentCodeSuccess         = 0x2390fe44
 	constructorAuthSentCodePaymentRequired = 0xd7a2fcf9
 
-	constructorSentCodeTypeApp              = 0x3dbb5986
-	constructorSentCodeTypeSMS              = 0xc000bba2
-	constructorSentCodeTypeCall             = 0x5353e5a7
-	constructorSentCodeTypeFlashCall        = 0xab03c6d9
-	constructorSentCodeTypeMissedCall       = 0x82006484
-	constructorSentCodeTypeEmailCode        = 0xf450f59b
-	constructorSentCodeTypeSetUpEmailReq    = 0xa5491dea
-	constructorSentCodeTypeFragmentSMS      = 0xd9565c39
-	constructorSentCodeTypeFirebaseSMS      = 0x009fd736
-	constructorSentCodeTypeSMSWord          = 0xa416ac81
-	constructorSentCodeTypeSMSPhrase        = 0xb37794af
+	constructorSentCodeTypeApp           = 0x3dbb5986
+	constructorSentCodeTypeSMS           = 0xc000bba2
+	constructorSentCodeTypeCall          = 0x5353e5a7
+	constructorSentCodeTypeFlashCall     = 0xab03c6d9
+	constructorSentCodeTypeMissedCall    = 0x82006484
+	constructorSentCodeTypeEmailCode     = 0xf450f59b
+	constructorSentCodeTypeSetUpEmailReq = 0xa5491dea
+	constructorSentCodeTypeFragmentSMS   = 0xd9565c39
+	constructorSentCodeTypeFirebaseSMS   = 0x009fd736
+	constructorSentCodeTypeSMSWord       = 0xa416ac81
+	constructorSentCodeTypeSMSPhrase     = 0xb37794af
 )
 
 // SentCodeResult is the parsed auth.SentCode response returned by AuthSendCode.
@@ -151,7 +151,7 @@ func makeAuthSendCodeQuery(apiID int, apiHash, phoneNumber string) []byte {
 	inner.putString(apiHash)
 	inner.putInt(constructorCodeSettings)
 	inner.putInt(0) // flags: minimal codeSettings, no optional fields.
-	return wrapWithLayerAndInitConnection(apiID, appVersionV8, inner.bytes())
+	return wrapWithLayerAndInitConnection(apiID, appVersionV9, inner.bytes())
 }
 
 func makeAuthSignInQuery(apiID int, phoneNumber, phoneCodeHash, phoneCode string) []byte {
@@ -161,7 +161,7 @@ func makeAuthSignInQuery(apiID int, phoneNumber, phoneCodeHash, phoneCode string
 	inner.putString(phoneNumber)
 	inner.putString(phoneCodeHash)
 	inner.putString(phoneCode)
-	return wrapWithLayerAndInitConnection(apiID, appVersionV8, inner.bytes())
+	return wrapWithLayerAndInitConnection(apiID, appVersionV9, inner.bytes())
 }
 
 func parseSentCodeResult(phoneNumber string, body []byte) (*SentCodeResult, error) {

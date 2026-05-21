@@ -2,11 +2,11 @@
 
 MtProGo is a clean Go Telegram client foundation built from scratch.
 
-V8 is implemented with the Go standard library only. It does **not** import TDLib, gotd, tgbotapi, Pyrogram, Telethon, Kurigram, or any other Telegram client library.
+V9 is implemented with the Go standard library only. It does **not** import TDLib, gotd, tgbotapi, Pyrogram, Telethon, Kurigram, or any other Telegram client library.
 
 ## Status
 
-Current V8 features:
+Current V9 features:
 
 - Real Telegram bot runtime using Telegram Bot API long polling
 - `getMe`, `getUpdates`, `sendMessage`
@@ -63,7 +63,7 @@ Enter Bot Token:
 Then send `/start` to your bot. The bot should reply:
 
 ```text
-Hello from MtProGo V8 🚀
+Hello from MtProGo V9 🚀
 ```
 
 This runtime uses Telegram Bot API internally, implemented with the Go standard library.
@@ -89,7 +89,7 @@ func main() {
     }))
 
     bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
-        return m.Reply(ctx, "Hello from MtProGo V8 🚀")
+        return m.Reply(ctx, "Hello from MtProGo V9 🚀")
     })
 
     mtprogo.Must0(bot.Run(context.Background()))
@@ -184,7 +184,7 @@ It asks for API ID, API hash, phone number, and the login code sent by Telegram.
 
 A successful login prints `auth.signIn OK` and then calls `updates.getState` to verify the authorized session.
 
-If Telegram returns `SESSION_PASSWORD_NEEDED`, that account has 2FA enabled. V8 supports phone-code login; SRP password login is the next account-auth milestone.
+If Telegram returns `SESSION_PASSWORD_NEEDED`, that account has 2FA enabled. V9 supports phone-code login and SRP 2FA password login.
 
 ## Raw MTProto messages.sendMessage
 

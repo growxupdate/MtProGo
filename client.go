@@ -19,7 +19,7 @@ type Config struct {
 type Option func(*Config)
 
 // Client is the base client foundation. The full MTProto runtime will build on
-// this type. V8 uses it for local dispatching and shared API shape.
+// this type. V9 uses it for local dispatching and shared API shape.
 type Client struct {
 	config     Config
 	dispatcher *updates.Dispatcher
