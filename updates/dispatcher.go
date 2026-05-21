@@ -38,6 +38,12 @@ func NewDispatcher(opts ...DispatcherOption) *Dispatcher {
 	if cfg.UpdateQueueSize < 0 {
 		cfg.UpdateQueueSize = 0
 	}
+	if cfg.MessageCacheMode == CacheDefault {
+		cfg.MessageCacheMode = CacheMatchedMessages
+	}
+	if cfg.MessageCacheMode < CacheDefault || cfg.MessageCacheMode > CacheFilteredMessages {
+		cfg.MessageCacheMode = CacheMatchedMessages
+	}
 	return &Dispatcher{
 		config:   cfg,
 		messages: NewMessageCache(cfg.MessageCacheSize),
@@ -56,6 +62,14 @@ func (d *Dispatcher) Config() DispatcherConfig {
 // UpdatesEnabled reports whether real update dispatching is enabled.
 func (d *Dispatcher) UpdatesEnabled() bool {
 	return d == nil || d.config.UpdatesEnabled
+}
+
+// MessageCacheMode returns the active message-cache policy.
+func (d *Dispatcher) MessageCacheMode() MessageCacheMode {
+	if d == nil {
+		return DefaultDispatcherConfig().MessageCacheMode
+	}
+	return d.config.MessageCacheMode
 }
 
 // MessageCache returns bounded recent-message cache.
@@ -84,6 +98,7 @@ func (d *Dispatcher) CacheSnapshot() CacheSnapshot {
 		MessageLimit: d.messages.Limit(),
 		PeerCount:    d.peers.Len(),
 		PeerLimit:    d.peers.Limit(),
+		CacheMode:    d.config.MessageCacheMode.String(),
 	}
 }
 
@@ -107,32 +122,75 @@ func (d *Dispatcher) PutPeer(peer Peer) {
 }
 
 // DispatchMessage dispatches one message to all matching routes.
+// V11 intentionally evaluates filters before caching, so CacheMatchedMessages
+// stores only useful messages such as registered commands instead of every noisy
+// incoming update. This keeps RAM bounded for very large bots.
 func (d *Dispatcher) DispatchMessage(ctx context.Context, msg *Message) error {
 	if d == nil || msg == nil {
 		return nil
 	}
-	if d.messages != nil {
+	matched := d.matchingRoutes(msg)
+	cacheThis := d.shouldCacheMessage(msg, len(matched) > 0)
+	if cacheThis && d.messages != nil {
 		d.messages.Add(msg)
 	}
-	if msg.FromID != 0 && d.peers != nil {
+	// Peer cache follows useful messages only: cached messages or handled messages.
+	// This prevents one million random non-command senders from filling RAM when
+	// the bot only cares about /start, /ping, /help, /queue, etc.
+	if (cacheThis || len(matched) > 0) && d.peers != nil {
+		d.cachePeers(msg)
+	}
+	if !d.config.UpdatesEnabled {
+		return nil
+	}
+	for _, route := range matched {
+		if err := route.handler(ctx, msg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Dispatcher) matchingRoutes(msg *Message) []messageRoute {
+	if len(d.messageRoutes) == 0 {
+		return nil
+	}
+	matched := make([]messageRoute, 0, 1)
+	for _, route := range d.messageRoutes {
+		if route.filter == nil || route.filter(msg) {
+			matched = append(matched, route)
+		}
+	}
+	return matched
+}
+
+func (d *Dispatcher) shouldCacheMessage(msg *Message, matched bool) bool {
+	if d.messages == nil || d.messages.Limit() <= 0 {
+		return false
+	}
+	switch d.config.MessageCacheMode {
+	case CacheNone:
+		return false
+	case CacheAllMessages:
+		return true
+	case CacheMatchedMessages:
+		return matched
+	case CacheFilteredMessages:
+		return d.config.MessageCacheFilter != nil && d.config.MessageCacheFilter(msg)
+	default:
+		return matched
+	}
+}
+
+func (d *Dispatcher) cachePeers(msg *Message) {
+	if msg.FromID != 0 {
 		d.peers.Put(Peer{ID: msg.FromID, Kind: "user"})
 	}
-	if msg.ChatID != 0 && d.peers != nil {
+	if msg.ChatID != 0 {
 		kind := "chat"
 		if msg.ChatID == msg.FromID {
 			kind = "user"
 		}
 		d.peers.Put(Peer{ID: msg.ChatID, Kind: kind})
 	}
-	if !d.config.UpdatesEnabled {
-		return nil
-	}
-	for _, route := range d.messageRoutes {
-		if route.filter(msg) {
-			if err := route.handler(ctx, msg); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }

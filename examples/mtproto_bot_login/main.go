@@ -23,7 +23,7 @@ func ask(label string) string {
 }
 
 func main() {
-	fmt.Println("MtProGo V9 pure MTProto bot authorization")
+	fmt.Println("MtProGo V11 pure MTProto bot authorization")
 	apiIDText := ask("Enter API ID: ")
 	apiHash := ask("Enter API Hash: ")
 	botToken := ask("Enter Bot Token: ")

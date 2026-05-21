@@ -260,7 +260,7 @@ func makeImportBotAuthorizationQuery(apiID int, apiHash, botToken string) []byte
 	inner.putInt(uint32(int32(apiID)))
 	inner.putString(apiHash)
 	inner.putString(botToken)
-	return wrapWithLayerAndInitConnection(apiID, appVersionV9, inner.bytes())
+	return wrapWithLayerAndInitConnection(apiID, appVersionV11, inner.bytes())
 }
 
 func makeMessagesSendMessageQuery(peer InputPeer, text string) ([]byte, error) {
@@ -342,4 +342,4 @@ func ConstructorName(id uint32) string {
 	}
 }
 
-const appVersionV9 = "v10.0.0-dev"
+const appVersionV11 = "v11.0.0-dev"

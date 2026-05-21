@@ -104,7 +104,7 @@ func parseDifferenceResult(body []byte) (*DifferenceResult, error) {
 			return out, nil
 		}
 		out.Messages = messages
-		// new_encrypted_messages, other_updates, chats, users are intentionally kept raw in V10.
+		// new_encrypted_messages, other_updates, chats, users are intentionally kept raw in V11.
 		// A full generated TL parser will replace this small hand-written parser later.
 		return out, nil
 	default:
@@ -414,7 +414,7 @@ func skipRawVector(r *tlReader) error {
 	}
 	for i := 0; i < int(count); i++ {
 		// Unknown object: this tiny parser cannot safely skip arbitrary TL objects.
-		return fmt.Errorf("mtproto: raw vector with %d objects is not supported by the tiny V10 parser", count)
+		return fmt.Errorf("mtproto: raw vector with %d objects is not supported by the tiny V11 parser", count)
 	}
 	return nil
 }

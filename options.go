@@ -17,3 +17,6 @@ func (c *Client) PeerCacheSize() int { return c.config.PeerCacheSize }
 
 // UpdateQueueSize returns configured update queue capacity.
 func (c *Client) UpdateQueueSize() int { return c.config.UpdateQueueSize }
+
+// MessageCacheMode returns the configured message-cache policy.
+func (c *Client) MessageCacheMode() MessageCacheMode { return c.config.MessageCacheMode }

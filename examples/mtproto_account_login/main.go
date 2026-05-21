@@ -24,7 +24,7 @@ func ask(label string) string {
 }
 
 func main() {
-	fmt.Println("MtProGo V9 pure MTProto user account login")
+	fmt.Println("MtProGo V11 pure MTProto user account login")
 	fmt.Println("This example sends auth.sendCode, calls auth.signIn, supports SESSION_PASSWORD_NEEDED with SRP 2FA, then checks updates.getState.")
 	fmt.Println()
 

@@ -4,7 +4,7 @@ MtProGo is a pure Go Telegram client project focused on a clean API, low memory 
 
 This repository intentionally does **not** import or wrap TDLib, gotd, tgbotapi, Telethon, Pyrogram, Kurigram, or any other Telegram client library.
 
-## Current V10 status
+## Current V11 status
 
 Working now:
 
@@ -56,7 +56,7 @@ func main() {
     ))
 
     bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
-        return m.Reply(ctx, "Hello from MtProGo V10 🚀")
+        return m.Reply(ctx, "Hello from MtProGo V11 🚀")
     })
 
     mtprogo.Must0(bot.Run(context.Background()))
@@ -65,7 +65,9 @@ func main() {
 
 ## Memory/cache controls
 
-MtProGo V10 lets users decide how much data should stay in RAM.
+MtProGo V11 lets users decide how much data should stay in RAM.
+
+The default message cache policy is **matched-only**. That means MtProGo does **not** cache every random update. If your bot registers only `/start`, `/ping`, `/help`, and `/queue`, then only messages matching registered handlers are cached by default. This is safer for very large bots because irrelevant messages are processed and dropped instead of being retained in RAM.
 
 ```go
 client := mtprogo.Must(mtprogo.New(
@@ -88,6 +90,30 @@ client := mtprogo.Must(mtprogo.New(
     mtprogo.WithPeerCacheSize(100),
 ))
 ```
+
+
+Selective command cache:
+
+```go
+bot := mtprogo.Must(mtprogo.NewBotWithOptions(
+    mtprogo.BotConfig{Token: token},
+    mtprogo.WithUpdates(true),
+    mtprogo.WithMessageCacheSize(1000),
+    mtprogo.WithPeerCacheSize(1000),
+    mtprogo.WithMessageCacheCommands("start", "ping", "help", "queue"),
+))
+```
+
+Cache policy options:
+
+```go
+mtprogo.WithMessageCacheMode(mtprogo.CacheMatchedMessages)  // default: cache only handled messages
+mtprogo.WithMessageCacheMode(mtprogo.CacheAllMessages)      // cache every incoming message
+mtprogo.WithMessageCacheMode(mtprogo.CacheNone)             // cache nothing
+mtprogo.WithMessageCacheFilter(customFilter)                // cache only messages accepted by your filter
+```
+
+When the cache limit is full, MtProGo drops the oldest cached message and keeps the newest one. With `WithMessageCacheSize(1000)`, message 1001 evicts message 1.
 
 Disable message cache:
 
@@ -135,6 +161,18 @@ Run local cache option demo:
 
 ```bash
 go run ./examples/cache_options
+```
+
+Run selective cache demo with 10,000 simulated updates:
+
+```bash
+go run ./examples/selective_cache
+```
+
+Run real bot with selective command cache:
+
+```bash
+go run ./examples/realbot_selective_cache
 ```
 
 Run pure MTProto probe:

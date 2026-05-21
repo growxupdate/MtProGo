@@ -24,7 +24,7 @@ func main() {
 
 	bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
 		fmt.Println("/start from", m.FromID)
-		return m.Reply(ctx, "Hello from MtProGo V9 🚀")
+		return m.Reply(ctx, "Hello from MtProGo V11 🚀")
 	})
 
 	mtprogo.Must0(bot.Run(context.Background()))

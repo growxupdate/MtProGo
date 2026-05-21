@@ -14,11 +14,16 @@ type Config struct {
 	APIHash string
 	Session SessionStore
 
-	// Updates enables handler dispatching. Caching still works when disabled.
+	// Updates enables handler dispatching. Caching can still work for manual dispatch when disabled.
 	Updates bool
-	// MessageCacheSize controls how many recent messages are kept in RAM.
+	// MessageCacheSize controls how many recent useful messages are kept in RAM.
 	// Use 0 to disable message caching. Default: 1000.
 	MessageCacheSize int
+	// MessageCacheMode controls which messages enter the bounded cache.
+	// Default: CacheMatchedMessages, so high-volume bots do not cache irrelevant updates.
+	MessageCacheMode updates.MessageCacheMode
+	// MessageCacheFilter is used when MessageCacheMode is CacheFilteredMessages.
+	MessageCacheFilter updates.MessageFilter
 	// PeerCacheSize controls how many peers are kept in RAM.
 	// Use 0 to disable peer caching. Default: 1000.
 	PeerCacheSize int
@@ -26,11 +31,27 @@ type Config struct {
 	UpdateQueueSize int
 }
 
+// MessageCacheMode aliases the updates cache policy type for user-facing options.
+type MessageCacheMode = updates.MessageCacheMode
+
+const (
+	// CacheDefault uses MtProGo's safe default: cache only matched messages.
+	CacheDefault = updates.CacheDefault
+	// CacheNone disables message caching.
+	CacheNone = updates.CacheNone
+	// CacheAllMessages caches every incoming message. Use carefully on high-volume bots.
+	CacheAllMessages = updates.CacheAllMessages
+	// CacheMatchedMessages caches only messages that match registered handlers. Default.
+	CacheMatchedMessages = updates.CacheMatchedMessages
+	// CacheFilteredMessages caches only messages accepted by a custom cache filter.
+	CacheFilteredMessages = updates.CacheFilteredMessages
+)
+
 // Option mutates Config.
 type Option func(*Config)
 
 // Client is the base client foundation. The full MTProto runtime builds on
-// this type. V10 adds configurable updates/cache primitives.
+// this type. V11 adds selective cache controls for high-volume bots.
 type Client struct {
 	config     Config
 	dispatcher *updates.Dispatcher
@@ -51,6 +72,7 @@ func New(apiID int, apiHash string, opts ...Option) (*Client, error) {
 		Session:          MemorySession(),
 		Updates:          true,
 		MessageCacheSize: updates.DefaultMessageCacheSize,
+		MessageCacheMode: updates.CacheMatchedMessages,
 		PeerCacheSize:    updates.DefaultPeerCacheSize,
 		UpdateQueueSize:  256,
 	}
@@ -74,6 +96,8 @@ func New(apiID int, apiHash string, opts ...Option) (*Client, error) {
 		dispatcher: updates.NewDispatcher(
 			updates.WithUpdates(cfg.Updates),
 			updates.WithMessageCacheSize(cfg.MessageCacheSize),
+			updates.WithMessageCacheMode(cfg.MessageCacheMode),
+			updates.WithMessageCacheFilter(cfg.MessageCacheFilter),
 			updates.WithPeerCacheSize(cfg.PeerCacheSize),
 			updates.WithUpdateQueueSize(cfg.UpdateQueueSize),
 		),
@@ -121,6 +145,34 @@ func WithUpdates(enabled bool) Option {
 // Example: WithMessageCacheSize(1000). Use 0 to disable message caching.
 func WithMessageCacheSize(size int) Option {
 	return func(c *Config) { c.MessageCacheSize = size }
+}
+
+// WithMessageCacheMode sets which messages are kept in RAM.
+func WithMessageCacheMode(mode MessageCacheMode) Option {
+	return func(c *Config) { c.MessageCacheMode = mode }
+}
+
+// WithMessageCacheFilter caches only messages accepted by filter.
+// It also switches the cache policy to CacheFilteredMessages.
+func WithMessageCacheFilter(filter updates.MessageFilter) Option {
+	return func(c *Config) {
+		c.MessageCacheFilter = filter
+		c.MessageCacheMode = updates.CacheFilteredMessages
+	}
+}
+
+// WithMessageCacheCommands caches only the specified slash commands.
+// This is ideal for bots that only care about commands such as /start, /ping, /help.
+func WithMessageCacheCommands(commands ...string) Option {
+	return WithMessageCacheFilter(filters.Or(commandFilters(commands...)...))
+}
+
+func commandFilters(commands ...string) []filters.Filter {
+	out := make([]filters.Filter, 0, len(commands))
+	for _, command := range commands {
+		out = append(out, filters.Command(command))
+	}
+	return out
 }
 
 // WithPeerCacheSize sets how many peers are kept in RAM. Use 0 to disable.

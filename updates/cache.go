@@ -27,6 +27,8 @@ type CacheSnapshot struct {
 	MessageLimit int
 	PeerCount    int
 	PeerLimit    int
+	// CacheMode describes which messages are stored: none, all, matched, or filtered.
+	CacheMode string
 }
 
 // MessageCache is a bounded ring cache for recent messages.

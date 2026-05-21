@@ -26,6 +26,10 @@ type BotConfig struct {
 	DropPendingUpdates bool
 	// MessageCacheSize controls recent message cache size. Default: 1000.
 	MessageCacheSize int
+	// MessageCacheMode controls which messages are cached. Default: CacheMatchedMessages.
+	MessageCacheMode updates.MessageCacheMode
+	// MessageCacheFilter is used when MessageCacheMode is CacheFilteredMessages.
+	MessageCacheFilter updates.MessageFilter
 	// PeerCacheSize controls cached peer count. Default: 1000.
 	PeerCacheSize int
 	// UpdateQueueSize reserves future async update queue capacity. Default: 256.
@@ -54,6 +58,9 @@ func NewBot(config BotConfig) (*Bot, error) {
 	if config.PeerCacheSize == 0 {
 		config.PeerCacheSize = updates.DefaultPeerCacheSize
 	}
+	if config.MessageCacheMode == 0 {
+		config.MessageCacheMode = updates.CacheMatchedMessages
+	}
 	if config.UpdateQueueSize == 0 {
 		config.UpdateQueueSize = 256
 	}
@@ -70,6 +77,8 @@ func NewBot(config BotConfig) (*Bot, error) {
 		dispatcher: updates.NewDispatcher(
 			updates.WithUpdates(config.Updates),
 			updates.WithMessageCacheSize(config.MessageCacheSize),
+			updates.WithMessageCacheMode(config.MessageCacheMode),
+			updates.WithMessageCacheFilter(config.MessageCacheFilter),
 			updates.WithPeerCacheSize(config.PeerCacheSize),
 			updates.WithUpdateQueueSize(config.UpdateQueueSize),
 		),
@@ -84,6 +93,7 @@ func NewBotWithOptions(config BotConfig, opts ...Option) (*Bot, error) {
 		Session:          MemorySession(),
 		Updates:          true,
 		MessageCacheSize: updates.DefaultMessageCacheSize,
+		MessageCacheMode: updates.CacheMatchedMessages,
 		PeerCacheSize:    updates.DefaultPeerCacheSize,
 		UpdateQueueSize:  256,
 	}
@@ -94,6 +104,8 @@ func NewBotWithOptions(config BotConfig, opts ...Option) (*Bot, error) {
 	}
 	config.Updates = cfg.Updates
 	config.MessageCacheSize = cfg.MessageCacheSize
+	config.MessageCacheMode = cfg.MessageCacheMode
+	config.MessageCacheFilter = cfg.MessageCacheFilter
 	config.PeerCacheSize = cfg.PeerCacheSize
 	config.UpdateQueueSize = cfg.UpdateQueueSize
 	return newBotExact(config)
@@ -125,6 +137,8 @@ func newBotExact(config BotConfig) (*Bot, error) {
 		dispatcher: updates.NewDispatcher(
 			updates.WithUpdates(config.Updates),
 			updates.WithMessageCacheSize(config.MessageCacheSize),
+			updates.WithMessageCacheMode(config.MessageCacheMode),
+			updates.WithMessageCacheFilter(config.MessageCacheFilter),
 			updates.WithPeerCacheSize(config.PeerCacheSize),
 			updates.WithUpdateQueueSize(config.UpdateQueueSize),
 		),
