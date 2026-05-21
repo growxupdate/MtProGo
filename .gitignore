@@ -1,0 +1,4 @@
+*.session
+*.zip
+.env
+.DS_Store
