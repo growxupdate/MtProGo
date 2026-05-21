@@ -342,4 +342,4 @@ func ConstructorName(id uint32) string {
 	}
 }
 
-const appVersionV9 = "v9.0.0-dev"
+const appVersionV9 = "v10.0.0-dev"

@@ -1,74 +1,40 @@
 # MtProGo
 
-MtProGo is a clean Go Telegram client foundation built from scratch.
+MtProGo is a pure Go Telegram client project focused on a clean API, low memory use, and a long-term MTProto implementation.
 
-V9 is implemented with the Go standard library only. It does **not** import TDLib, gotd, tgbotapi, Pyrogram, Telethon, Kurigram, or any other Telegram client library.
+This repository intentionally does **not** import or wrap TDLib, gotd, tgbotapi, Telethon, Pyrogram, Kurigram, or any other Telegram client library.
 
-## Status
+## Current V10 status
 
-Current V9 features:
+Working now:
 
-- Real Telegram bot runtime using Telegram Bot API long polling
-- `getMe`, `getUpdates`, `sendMessage`
-- `OnMessage` handlers
-- Command, regex, chat, user, and text filters
-- `Message.Reply()` helper
-- Pure Go MTProto `req_pq_multi` probe over TCP abridged
-- Pure Go MTProto RSA/DH authorization key generation
-- AES-IGE implementation
-- MTProto RSA fingerprinting and RSA_PAD implementation
-- Encrypted MTProto message packing and response parsing
-- Encrypted `help.getConfig` example
-- Pure MTProto bot authorization using `auth.importBotAuthorization`
-- Raw encrypted `messages.sendMessage` helper for known `InputPeer` values
-- Pure MTProto user account phone-code login with `auth.sendCode` and `auth.signIn`
-- `updates.getState` helper for authorized bot/user sessions
-- Pure MTProto user account phone-code login with `auth.sendCode` and `auth.signIn`
-- `updates.getState` helper for authorized bot/user sessions
+- Real Telegram bot runtime using the Go standard library Bot API backend
+- Real `/start` bot example with replies
+- Pure Go MTProto `req_pq_multi` probe
+- Pure Go MTProto auth key generation
+- Pure Go encrypted MTProto `help.getConfig`
+- Pure MTProto bot authorization with DC migration handling
+- Pure MTProto account phone-code login
+- Pure MTProto SRP 2FA password login
+- Configurable update handling
+- Configurable bounded message cache
+- Configurable bounded peer cache
 - No external Go dependencies
-- GitHub Actions CI
-- Makefile
-- Tests and examples
 
-Not complete yet:
+Still in progress:
 
-- MTProto updates loop and `/start` receive over MTProto
-- Automatic peer database and access-hash discovery
-- 2FA/SRP password login
-- Generated full raw Telegram API
-- MTProto update state and gap recovery
-- Media upload/download over MTProto
-- Full Kurigram-style high-level client parity
+- Full generated TL API
+- Full MTProto updates dispatcher
+- High-level Kurigram/Pyrogram-style helpers for every Telegram method
+- Media upload/download helpers
 
-## Installation
+## Install
 
 ```bash
 go get github.com/growxupdate/MtProGo@main
 ```
 
-## Real bot example
-
-```bash
-go run github.com/growxupdate/MtProGo/examples/realbot@main
-```
-
-It asks for:
-
-```text
-Enter API ID:
-Enter API Hash:
-Enter Bot Token:
-```
-
-Then send `/start` to your bot. The bot should reply:
-
-```text
-Hello from MtProGo V9 🚀
-```
-
-This runtime uses Telegram Bot API internally, implemented with the Go standard library.
-
-## Minimal bot code
+## Basic bot example
 
 ```go
 package main
@@ -82,145 +48,126 @@ import (
 )
 
 func main() {
-    bot := mtprogo.Must(mtprogo.NewBot(mtprogo.BotConfig{
-        APIID:   12345,
-        APIHash: "your_api_hash",
-        Token:   "your_bot_token",
-    }))
+    bot := mtprogo.Must(mtprogo.NewBotWithOptions(
+        mtprogo.BotConfig{Token: "BOT_TOKEN"},
+        mtprogo.WithUpdates(true),
+        mtprogo.WithMessageCacheSize(1000),
+        mtprogo.WithPeerCacheSize(1000),
+    ))
 
     bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
-        return m.Reply(ctx, "Hello from MtProGo V9 🚀")
+        return m.Reply(ctx, "Hello from MtProGo V10 🚀")
     })
 
     mtprogo.Must0(bot.Run(context.Background()))
 }
 ```
 
-## Pure MTProto probe
+## Memory/cache controls
+
+MtProGo V10 lets users decide how much data should stay in RAM.
+
+```go
+client := mtprogo.Must(mtprogo.New(
+    12345,
+    "api_hash",
+    mtprogo.WithUpdates(true),
+    mtprogo.WithMessageCacheSize(1000), // keep last 1000 messages
+    mtprogo.WithPeerCacheSize(1000),    // keep last 1000 peers
+    mtprogo.WithUpdateQueueSize(256),
+))
+```
+
+Low-memory setup:
+
+```go
+client := mtprogo.Must(mtprogo.New(
+    12345,
+    "api_hash",
+    mtprogo.WithMessageCacheSize(100),
+    mtprogo.WithPeerCacheSize(100),
+))
+```
+
+Disable message cache:
+
+```go
+client := mtprogo.Must(mtprogo.New(
+    12345,
+    "api_hash",
+    mtprogo.WithMessageCacheSize(0),
+))
+```
+
+Disable handler dispatching while still allowing cache population:
+
+```go
+client := mtprogo.Must(mtprogo.New(
+    12345,
+    "api_hash",
+    mtprogo.WithUpdates(false),
+))
+```
+
+Read cache stats:
+
+```go
+snapshot := client.CacheSnapshot()
+println(snapshot.MessageCount, snapshot.MessageLimit)
+println(snapshot.PeerCount, snapshot.PeerLimit)
+```
+
+## Examples
+
+Run a real bot:
 
 ```bash
-go run github.com/growxupdate/MtProGo/examples/mtproto_probe@main
+go run ./examples/realbot
 ```
 
-Press Enter to try default Telegram DCs. A successful result prints `pq`, factors `p` and `q`, and RSA fingerprints.
-
-## Pure MTProto auth key generation
+Run a real bot with cache options:
 
 ```bash
-go run github.com/growxupdate/MtProGo/examples/mtproto_auth@main
+go run ./examples/realbot_cache
 ```
 
-Press Enter to try default Telegram DCs. A successful result prints:
-
-```text
-Pure MTProto auth key OK
-Address: ...
-DC ID: ...
-RSA fingerprint: ...
-Auth key bytes: 256
-Auth key ID: ...
-Server salt: ...
-Server time offset: ...
-```
-
-## Encrypted MTProto help.getConfig
+Run local cache option demo:
 
 ```bash
-go run github.com/growxupdate/MtProGo/examples/mtproto_config@main
+go run ./examples/cache_options
 ```
 
-Press Enter to send direct `help.getConfig`, or enter your API ID to wrap the request with `invokeWithLayer/initConnection`.
-
-A successful result prints:
-
-```text
-Encrypted MTProto help.getConfig OK
-Address: ...
-DC ID: ...
-Auth key ID: ...
-Server salt: ...
-Session ID: ...
-Request msg ID: ...
-Response msg ID: ...
-Result constructor: 0x...
-Gzip packed: ...
-Result bytes: ...
-```
-
-## Pure MTProto bot authorization
+Run pure MTProto probe:
 
 ```bash
-go run github.com/growxupdate/MtProGo/examples/mtproto_bot_login@main
+go run ./examples/mtproto_probe
 ```
 
-It asks for:
-
-```text
-Enter API ID:
-Enter API Hash:
-Enter Bot Token:
-```
-
-A successful result prints:
-
-```text
-Pure MTProto bot authorization OK
-Address: ...
-DC ID: ...
-Auth key ID: ...
-Server salt: ...
-Session ID: ...
-Result constructor: 0x2ea2c0d4 auth.authorization
-Result bytes: ...
-```
-
-## Pure MTProto account login
+Generate a pure MTProto auth key:
 
 ```bash
-go run github.com/growxupdate/MtProGo/examples/mtproto_account_login@main
+go run ./examples/mtproto_auth
 ```
 
-It asks for API ID, API hash, phone number, and the login code sent by Telegram.
-
-A successful login prints `auth.signIn OK` and then calls `updates.getState` to verify the authorized session.
-
-If Telegram returns `SESSION_PASSWORD_NEEDED`, that account has 2FA enabled. V9 supports phone-code login and SRP 2FA password login.
-
-## Raw MTProto messages.sendMessage
+Call encrypted MTProto help.getConfig:
 
 ```bash
-go run github.com/growxupdate/MtProGo/examples/mtproto_send_message@main
+go run ./examples/mtproto_config
 ```
 
-This example first logs the bot in with `auth.importBotAuthorization`, then calls `messages.sendMessage`.
-
-Important: `inputPeerUser` and `inputPeerChannel` require the Telegram `access_hash`. In a full client, access hashes are learned from MTProto updates, dialogs, contacts, or resolved peers. That automatic peer database is planned for the next milestone.
-
-## Verify dependencies
+Login a bot over pure MTProto:
 
 ```bash
-go list -m all
+go run ./examples/mtproto_bot_login
 ```
 
-Expected output:
-
-```text
-github.com/growxupdate/MtProGo
-```
-
-Also audit Telegram client imports:
+Login an account over pure MTProto:
 
 ```bash
-grep -R -n -E "github.com/gotd|tdlib|tgbotapi|telethon|pyrogram|kurigram" . \
-  --include="*.go" \
-  --include="go.mod" \
-  --include="go.sum" \
-  --exclude-dir=".git"
+go run ./examples/mtproto_account_login
 ```
 
-Expected output: empty.
-
-## Development
+## CI
 
 ```bash
 go mod tidy
@@ -229,22 +176,22 @@ go vet ./...
 make ci
 ```
 
-## Roadmap
+## Audit
 
-V9 target:
+```bash
+go list -m all
 
-- SRP 2FA password login
-- MTProto updates loop and peer cache
-- `/start` receive and reply over MTProto
-- Basic peer cache and access-hash capture
+grep -R -n -E "github.com/gotd|tdlib|tgbotapi|telethon|pyrogram|kurigram" . \
+  --include="*.go" \
+  --include="go.mod" \
+  --include="go.sum" \
+  --exclude-dir=".git"
+```
 
-V9 target:
+Expected module audit:
 
-- Phone login, 2FA, and user accounts
-- Updates state tracking
-- High-level Kurigram-style helpers
+```text
+github.com/growxupdate/MtProGo
+```
 
-V10 target:
-
-- File upload/download over MTProto
-- Generated raw API expansion
+Expected external Telegram library audit: empty output.

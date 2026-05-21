@@ -1,6 +1,9 @@
 package updates
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // ReplySender can send replies for a Message.
 type ReplySender interface {
@@ -13,6 +16,7 @@ type Message struct {
 	ChatID int64
 	FromID int64
 	Text   string
+	Date   time.Time
 	Raw    any
 
 	ReplySender ReplySender

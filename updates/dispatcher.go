@@ -15,11 +15,77 @@ type messageRoute struct {
 
 // Dispatcher routes normalized Telegram updates to handlers.
 type Dispatcher struct {
+	config        DispatcherConfig
 	messageRoutes []messageRoute
+	messages      *MessageCache
+	peers         *PeerCache
 }
 
 // NewDispatcher creates a Dispatcher.
-func NewDispatcher() *Dispatcher { return &Dispatcher{} }
+func NewDispatcher(opts ...DispatcherOption) *Dispatcher {
+	cfg := DefaultDispatcherConfig()
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	if cfg.MessageCacheSize < 0 {
+		cfg.MessageCacheSize = 0
+	}
+	if cfg.PeerCacheSize < 0 {
+		cfg.PeerCacheSize = 0
+	}
+	if cfg.UpdateQueueSize < 0 {
+		cfg.UpdateQueueSize = 0
+	}
+	return &Dispatcher{
+		config:   cfg,
+		messages: NewMessageCache(cfg.MessageCacheSize),
+		peers:    NewPeerCache(cfg.PeerCacheSize),
+	}
+}
+
+// Config returns dispatcher configuration.
+func (d *Dispatcher) Config() DispatcherConfig {
+	if d == nil {
+		return DefaultDispatcherConfig()
+	}
+	return d.config
+}
+
+// UpdatesEnabled reports whether real update dispatching is enabled.
+func (d *Dispatcher) UpdatesEnabled() bool {
+	return d == nil || d.config.UpdatesEnabled
+}
+
+// MessageCache returns bounded recent-message cache.
+func (d *Dispatcher) MessageCache() *MessageCache {
+	if d == nil {
+		return nil
+	}
+	return d.messages
+}
+
+// PeerCache returns bounded peer cache.
+func (d *Dispatcher) PeerCache() *PeerCache {
+	if d == nil {
+		return nil
+	}
+	return d.peers
+}
+
+// CacheSnapshot returns message/peer cache sizes.
+func (d *Dispatcher) CacheSnapshot() CacheSnapshot {
+	if d == nil {
+		return CacheSnapshot{}
+	}
+	return CacheSnapshot{
+		MessageCount: d.messages.Len(),
+		MessageLimit: d.messages.Limit(),
+		PeerCount:    d.peers.Len(),
+		PeerLimit:    d.peers.Limit(),
+	}
+}
 
 // OnMessage registers a message route.
 func (d *Dispatcher) OnMessage(filter MessageFilter, handler MessageHandler) {
@@ -32,8 +98,35 @@ func (d *Dispatcher) OnMessage(filter MessageFilter, handler MessageHandler) {
 	d.messageRoutes = append(d.messageRoutes, messageRoute{filter: filter, handler: handler})
 }
 
+// PutPeer inserts a peer into the peer cache.
+func (d *Dispatcher) PutPeer(peer Peer) {
+	if d == nil || d.peers == nil {
+		return
+	}
+	d.peers.Put(peer)
+}
+
 // DispatchMessage dispatches one message to all matching routes.
 func (d *Dispatcher) DispatchMessage(ctx context.Context, msg *Message) error {
+	if d == nil || msg == nil {
+		return nil
+	}
+	if d.messages != nil {
+		d.messages.Add(msg)
+	}
+	if msg.FromID != 0 && d.peers != nil {
+		d.peers.Put(Peer{ID: msg.FromID, Kind: "user"})
+	}
+	if msg.ChatID != 0 && d.peers != nil {
+		kind := "chat"
+		if msg.ChatID == msg.FromID {
+			kind = "user"
+		}
+		d.peers.Put(Peer{ID: msg.ChatID, Kind: kind})
+	}
+	if !d.config.UpdatesEnabled {
+		return nil
+	}
 	for _, route := range d.messageRoutes {
 		if route.filter(msg) {
 			if err := route.handler(ctx, msg); err != nil {

@@ -86,7 +86,7 @@ func (c *Client) GetMe(ctx context.Context) (User, error) {
 // GetUpdates polls updates.
 func (c *Client) GetUpdates(ctx context.Context, offset int, timeoutSeconds int) ([]Update, error) {
 	form := url.Values{}
-	if offset > 0 {
+	if offset != 0 {
 		form.Set("offset", strconv.Itoa(offset))
 	}
 	if timeoutSeconds > 0 {
