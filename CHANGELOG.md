@@ -1,5 +1,18 @@
 # Changelog
 
+## v17.0.0-dev
+
+- Add high-level MTProto `GetMe` helper backed by `users.getUsers(inputUserSelf)`.
+- Add `ResolveUsername` helper backed by `contacts.resolveUsername`.
+- Add `GetChat` and `GetUser` peer-cache helpers.
+- Add `SendMessageWithOptions` with reply, silent, no-webpage, and background flags.
+- Add `EditMessageWithOptions`.
+- Make `DeleteMessages` channel-aware by using `channels.deleteMessages` for supergroups/channels.
+- Add basic `ForwardMessage` and `ForwardMessages` helpers.
+- Add raw `GetHistory` helper.
+- Add `OnMessageClient` handler style with `(ctx, client, message)`.
+- Add `examples/mtproto_highlevel`.
+
 ## v15.0.0-dev
 
 - Normalize high-level MTProto chat IDs to Telegram/Bot-API-style IDs.

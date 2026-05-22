@@ -423,12 +423,17 @@ func (b *MTProtoBot) snapshotPeers() []mtproto.PeerRef {
 
 // Reply implements updates.ReplySender.
 // It can send to cached private users, basic groups, and channels/supergroups.
-func (b *MTProtoBot) Reply(ctx context.Context, chatID int64, _ int, text string) error {
-	return b.SendMessage(ctx, chatID, text)
+func (b *MTProtoBot) Reply(ctx context.Context, chatID int64, replyToMessageID int, text string) error {
+	return b.SendMessageWithOptions(ctx, chatID, text, SendOptions{ReplyToMessageID: replyToMessageID})
 }
 
 // SendMessage sends a text message to a cached private/group/channel peer.
 func (b *MTProtoBot) SendMessage(ctx context.Context, chatID int64, text string) error {
+	return b.SendMessageWithOptions(ctx, chatID, text, SendOptions{})
+}
+
+// SendMessageWithOptions sends a text message with reply/silent/no_webpage options.
+func (b *MTProtoBot) SendMessageWithOptions(ctx context.Context, chatID int64, text string, opts SendOptions) error {
 	if b == nil || b.client == nil {
 		return errors.New("mtproto bot is not logged in")
 	}
@@ -437,13 +442,18 @@ func (b *MTProtoBot) SendMessage(ctx context.Context, chatID int64, text string)
 		return fmt.Errorf("mtproto: peer %d is not cached yet", chatID)
 	}
 	return b.withFloodWait(ctx, func(callCtx context.Context) error {
-		_, err := b.client.MessagesSendMessageToPeer(callCtx, peer, text)
+		_, err := b.client.MessagesSendMessageToPeerWithOptions(callCtx, peer, text, toMTProtoSendOptions(opts))
 		return err
 	})
 }
 
 // EditMessage edits a cached private/group/channel text message when Telegram permits it.
 func (b *MTProtoBot) EditMessage(ctx context.Context, chatID int64, messageID int, text string) error {
+	return b.EditMessageWithOptions(ctx, chatID, messageID, text, EditOptions{})
+}
+
+// EditMessageWithOptions edits text with options.
+func (b *MTProtoBot) EditMessageWithOptions(ctx context.Context, chatID int64, messageID int, text string, opts EditOptions) error {
 	if b == nil || b.client == nil {
 		return errors.New("mtproto bot is not logged in")
 	}
@@ -452,13 +462,13 @@ func (b *MTProtoBot) EditMessage(ctx context.Context, chatID int64, messageID in
 		return fmt.Errorf("mtproto: peer %d is not cached yet", chatID)
 	}
 	return b.withFloodWait(ctx, func(callCtx context.Context) error {
-		_, err := b.client.MessagesEditMessageToPeer(callCtx, peer, int32(messageID), text)
+		_, err := b.client.MessagesEditMessageToPeerWithOptions(callCtx, peer, int32(messageID), text, toMTProtoEditOptions(opts))
 		return err
 	})
 }
 
-// DeleteMessages deletes messages in cached private/group contexts when Telegram permits it.
-func (b *MTProtoBot) DeleteMessages(ctx context.Context, _ int64, messageIDs ...int) error {
+// DeleteMessages deletes messages in cached private/group/channel contexts when Telegram permits it.
+func (b *MTProtoBot) DeleteMessages(ctx context.Context, chatID int64, messageIDs ...int) error {
 	if b == nil || b.client == nil {
 		return errors.New("mtproto bot is not logged in")
 	}
@@ -468,7 +478,15 @@ func (b *MTProtoBot) DeleteMessages(ctx context.Context, _ int64, messageIDs ...
 			ids = append(ids, int32(id))
 		}
 	}
+	peer, ok := b.getPeer(chatID)
+	if !ok {
+		return fmt.Errorf("mtproto: peer %d is not cached yet", chatID)
+	}
 	return b.withFloodWait(ctx, func(callCtx context.Context) error {
+		if peer.Kind == "channel" || peer.Kind == "supergroup" {
+			_, err := b.client.ChannelsDeleteMessages(callCtx, peer, ids...)
+			return err
+		}
 		_, err := b.client.MessagesDeleteMessages(callCtx, true, ids...)
 		return err
 	})

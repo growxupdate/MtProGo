@@ -143,6 +143,45 @@ High-level `Message.ChatID` values now match Telegram/Bot-API style IDs:
 The raw positive MTProto peer ID remains available as `Message.RawChatID`. You can pass the public `Message.ChatID` back to `Reply`, `SendMessage`, and `EditMessage`; MtProGo resolves it to the cached raw peer internally.
 
 
+
+## V17 high-level MTProto helpers
+
+V17 adds a cleaner public API on top of the pure MTProto runtime:
+
+```go
+bot.OnMessageClient(filters.Command("start"), func(ctx context.Context, c *mtprogo.MTProtoBot, m *updates.Message) error {
+    me, _ := c.GetMe(ctx)
+    return m.Reply(ctx, "Hello from "+me.DisplayName())
+})
+
+bot.SendMessageWithOptions(ctx, chatID, "silent reply", mtprogo.SendOptions{
+    ReplyToMessageID: msgID,
+    Silent: true,
+    NoWebpage: true,
+})
+
+peer, err := bot.ResolveUsername(ctx, "telegram")
+_ = peer
+```
+
+New helpers:
+
+- `GetMe` over MTProto via `users.getUsers(inputUserSelf)`
+- `ResolveUsername` over MTProto via `contacts.resolveUsername`
+- `GetChat` / `GetUser` from the peer cache
+- `SendMessageWithOptions` with reply, silent, no-webpage, background flags
+- `EditMessageWithOptions`
+- channel-aware `DeleteMessages`
+- `ForwardMessage` / `ForwardMessages`
+- `GetHistory` raw helper
+- `OnMessageClient` handler style: `(ctx, client, message)`
+
+Try it:
+
+```bash
+go run ./examples/mtproto_highlevel
+```
+
 ## V16 production reliability controls
 
 V16 stores the current `pts/qts/date/seq` update state and the lightweight peer cache inside the bot session file. On restart, MtProGo can resume from the saved update state instead of always starting from a fresh `updates.getState`. It also keeps saved access hashes for peers already seen in updates, which avoids losing group/supergroup send ability after restart.
