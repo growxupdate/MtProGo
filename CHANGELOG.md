@@ -77,3 +77,11 @@
 - V6: Encrypted help.getConfig.
 - V5: Auth key generation.
 - V4: Clean pure-Go base and MTProto probe.
+
+## v18.0.0-dev
+
+- Added pure MTProto streaming upload foundation with upload.saveFilePart and upload.saveBigFilePart.
+- Added upload.getFile download streaming foundation.
+- Added SendDocument and SendPhoto high-level helpers for MTProto bot sessions.
+- Added progress callbacks and chunk-size controls for low-memory media transfer.
+- Added examples/mtproto_media.

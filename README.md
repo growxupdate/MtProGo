@@ -4,7 +4,7 @@ MtProGo is a pure Go Telegram client project focused on a clean API, low memory 
 
 This repository intentionally does **not** import or wrap TDLib, gotd, tgbotapi, Telethon, Pyrogram, Kurigram, or any other Telegram client library.
 
-## Current V16 status
+## Current V18 status
 
 Working now:
 
@@ -30,7 +30,7 @@ Still in progress:
 - Full generated TL API
 - Full generated MTProto updates parser for every update type
 - High-level Kurigram/Pyrogram-style helpers for every Telegram method
-- Media upload/download helpers
+- More media parsers and automatic file-reference refresh
 
 ## Install
 
@@ -106,6 +106,36 @@ Clear saved session:
 err := bot.ClearSession(context.Background())
 ```
 
+
+
+## V18 media upload/download foundation
+
+V18 adds pure MTProto streaming media helpers. Uploads use bounded chunks so large files do not have to be loaded fully into RAM.
+
+```bash
+go run ./examples/mtproto_media
+```
+
+Example helper usage:
+
+```go
+bot.OnMessageClient(filters.Command("doc"), func(ctx context.Context, c *mtprogo.MTProtoBot, m *updates.Message) error {
+    return c.SendDocument(ctx, m.ChatID, "README.md", mtprogo.SendMediaOptions{
+        Caption: "Document from MtProGo",
+    })
+})
+```
+
+Low-memory upload tuning:
+
+```go
+uploaded, err := bot.UploadFile(ctx, reader, size, "big.bin", mtprogo.UploadOptions{
+    PartSize: 256 * 1024,
+    Progress: func(done, total int64) {
+        fmt.Println(done, total)
+    },
+})
+```
 
 ## MTProto chat helpers and production reliability in V16
 

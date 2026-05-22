@@ -39,3 +39,49 @@ func toMTProtoEditOptions(opts EditOptions) mtproto.EditOptions {
 func toMTProtoForwardOptions(opts ForwardOptions) mtproto.ForwardOptions {
 	return mtproto.ForwardOptions{Silent: opts.Silent, DropAuthor: opts.DropAuthor, DropMediaCaptions: opts.DropMediaCaptions}
 }
+
+// UploadedFile describes a file uploaded through MTProto upload.saveFilePart/upload.saveBigFilePart.
+type UploadedFile = mtproto.UploadedFile
+
+// UploadOptions controls MTProto streaming upload chunking and progress.
+type UploadOptions = mtproto.UploadOptions
+
+// DownloadOptions controls MTProto upload.getFile chunking and progress.
+type DownloadOptions = mtproto.DownloadOptions
+
+// ProgressFunc receives completed bytes and total bytes.
+type ProgressFunc = mtproto.ProgressFunc
+
+// InputFileLocation is a raw upload.getFile location.
+type InputFileLocation = mtproto.InputFileLocation
+
+// DocumentFileLocation identifies a document/video/audio/voice file for download.
+type DocumentFileLocation = mtproto.DocumentFileLocation
+
+// PhotoFileLocation identifies a photo size for download.
+type PhotoFileLocation = mtproto.PhotoFileLocation
+
+// SendMediaOptions controls MTProto media sending.
+type SendMediaOptions struct {
+	Caption          string
+	ReplyToMessageID int
+	Silent           bool
+	Background       bool
+	Spoiler          bool
+	ForceFile        bool
+	MIMEType         string
+	FileName         string
+}
+
+func toMTProtoSendMediaOptions(opts SendMediaOptions) mtproto.SendMediaOptions {
+	return mtproto.SendMediaOptions{
+		Caption:          opts.Caption,
+		ReplyToMessageID: opts.ReplyToMessageID,
+		Silent:           opts.Silent,
+		Background:       opts.Background,
+		Spoiler:          opts.Spoiler,
+		ForceFile:        opts.ForceFile,
+		MIMEType:         opts.MIMEType,
+		FileName:         opts.FileName,
+	}
+}
