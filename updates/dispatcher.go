@@ -187,9 +187,12 @@ func (d *Dispatcher) cachePeers(msg *Message) {
 		d.peers.Put(Peer{ID: msg.FromID, Kind: "user"})
 	}
 	if msg.ChatID != 0 {
-		kind := "chat"
-		if msg.ChatID == msg.FromID {
-			kind = "user"
+		kind := msg.ChatType
+		if kind == "" {
+			kind = "chat"
+			if msg.ChatID == msg.FromID {
+				kind = "user"
+			}
 		}
 		d.peers.Put(Peer{ID: msg.ChatID, Kind: kind})
 	}

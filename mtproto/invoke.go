@@ -70,6 +70,58 @@ func (e *RPCError) Error() string {
 	return fmt.Sprintf("mtproto rpc_error %d: %s", e.Code, e.Message)
 }
 
+// BadServerSaltError represents Telegram bad_server_salt and carries the fixed salt.
+type BadServerSaltError struct {
+	BadMessageID int64
+	BadSeqNo     int32
+	Code         int32
+	NewSalt      int64
+}
+
+func (e *BadServerSaltError) Error() string {
+	if e == nil {
+		return "mtproto: bad_server_salt"
+	}
+	return fmt.Sprintf("mtproto: bad_server_salt bad_msg_id=%d seq=%d code=%d new_salt=%d", e.BadMessageID, e.BadSeqNo, e.Code, e.NewSalt)
+}
+
+// BadMessageError represents Telegram bad_msg_notification.
+type BadMessageError struct {
+	BadMessageID int64
+	BadSeqNo     int32
+	Code         int32
+}
+
+func (e *BadMessageError) Error() string {
+	if e == nil {
+		return "mtproto: bad_msg_notification"
+	}
+	return fmt.Sprintf("mtproto: bad_msg_notification bad_msg_id=%d seq=%d code=%d", e.BadMessageID, e.BadSeqNo, e.Code)
+}
+
+// FloodWaitDuration extracts FLOOD_WAIT_X as a duration.
+func FloodWaitDuration(err error) (time.Duration, bool) {
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) {
+		return 0, false
+	}
+	msg := cleanRPCErrorMessage(rpcErr.Message)
+	if !strings.HasPrefix(msg, "FLOOD_WAIT_") {
+		return 0, false
+	}
+	seconds, convErr := strconv.Atoi(strings.TrimPrefix(msg, "FLOOD_WAIT_"))
+	if convErr != nil || seconds < 0 {
+		return 0, false
+	}
+	return time.Duration(seconds) * time.Second, true
+}
+
+// IsFloodWait reports whether err is a FLOOD_WAIT_X rpc_error.
+func IsFloodWait(err error) bool {
+	_, ok := FloodWaitDuration(err)
+	return ok
+}
+
 // MigrationDCID extracts the target DC from errors such as USER_MIGRATE_5,
 // PHONE_MIGRATE_4, NETWORK_MIGRATE_2, or FILE_MIGRATE_3.
 func MigrationDCID(err error) (int, bool) {
@@ -183,42 +235,86 @@ func (s *encryptedState) nextMsgID() int64 {
 }
 
 func (s *encryptedState) invoke(ctx context.Context, conn net.Conn, body []byte) (*InvokeResult, error) {
-	requestMsgID := s.nextMsgID()
-	seqNo := s.nextSeqNo(true)
-	packet, err := s.buildEncryptedPacket(requestMsgID, seqNo, body)
-	if err != nil {
-		return nil, err
-	}
-	deadline, ok := ctx.Deadline()
-	if ok {
-		_ = conn.SetDeadline(deadline)
-	} else {
-		// Keep every RPC bounded, but do not leave the deadline active forever.
-		_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
-	}
-	defer conn.SetDeadline(time.Time{})
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		requestMsgID := s.nextMsgID()
+		seqNo := s.nextSeqNo(true)
+		packet, err := s.buildEncryptedPacket(requestMsgID, seqNo, body)
+		if err != nil {
+			return nil, err
+		}
+		deadline, ok := ctx.Deadline()
+		if ok {
+			_ = conn.SetDeadline(deadline)
+		} else {
+			// Keep every RPC bounded, but do not leave the deadline active forever.
+			_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+		}
 
-	if err := abridgedWrite(conn, packet); err != nil {
-		return nil, err
+		if err := abridgedWrite(conn, packet); err != nil {
+			_ = conn.SetDeadline(time.Time{})
+			return nil, err
+		}
+		for {
+			payload, err := abridgedRead(conn)
+			if err != nil {
+				_ = conn.SetDeadline(time.Time{})
+				return nil, err
+			}
+			msg, err := s.parseEncryptedPacket(payload)
+			if err != nil {
+				_ = conn.SetDeadline(time.Time{})
+				return nil, err
+			}
+			result, done, err := s.handleMessage(msg, requestMsgID)
+			if err != nil {
+				_ = conn.SetDeadline(time.Time{})
+				lastErr = err
+				var saltErr *BadServerSaltError
+				if errors.As(err, &saltErr) {
+					// handleMessage already installed the new salt. Rebuild and retry.
+					break
+				}
+				var badMsg *BadMessageError
+				if errors.As(err, &badMsg) && isRetriableBadMessageCode(badMsg.Code) {
+					if badMsg.Code == 16 || badMsg.Code == 17 {
+						s.adjustTimeOffsetFromBadMessage(requestMsgID, badMsg.Code)
+					}
+					break
+				}
+				return nil, err
+			}
+			if done {
+				_ = conn.SetDeadline(time.Time{})
+				result.RequestMessageID = requestMsgID
+				return result, nil
+			}
+		}
 	}
-	for {
-		payload, err := abridgedRead(conn)
-		if err != nil {
-			return nil, err
-		}
-		msg, err := s.parseEncryptedPacket(payload)
-		if err != nil {
-			return nil, err
-		}
-		result, done, err := s.handleMessage(msg, requestMsgID)
-		if err != nil {
-			return nil, err
-		}
-		if done {
-			result.RequestMessageID = requestMsgID
-			return result, nil
-		}
+	if lastErr != nil {
+		return nil, lastErr
 	}
+	return nil, errors.New("mtproto: invoke retry limit reached")
+}
+
+func isRetriableBadMessageCode(code int32) bool {
+	switch code {
+	case 16, 17, 32, 33, 48:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *encryptedState) adjustTimeOffsetFromBadMessage(badMsgID int64, code int32) {
+	if code != 16 && code != 17 || badMsgID == 0 {
+		return
+	}
+	serverSeconds := int64(uint64(badMsgID) >> 32)
+	if serverSeconds == 0 {
+		return
+	}
+	s.timeOffset = serverSeconds - time.Now().Unix()
 }
 
 func (s *encryptedState) buildEncryptedPacket(msgID int64, seqNo int32, body []byte) ([]byte, error) {
@@ -386,10 +482,12 @@ func (s *encryptedState) handleMessage(msg *encryptedMessage, requestMsgID int64
 		s.serverSalt = int64(newSalt)
 		return nil, false, nil
 	case constructorBadServerSalt:
-		if _, err := r.long(); err != nil { // bad_msg_id
+		badMsgID, err := r.long()
+		if err != nil { // bad_msg_id
 			return nil, false, err
 		}
-		if _, err := r.int(); err != nil { // bad_msg_seqno
+		badSeqNo, err := r.int()
+		if err != nil { // bad_msg_seqno
 			return nil, false, err
 		}
 		errorCode, err := r.int()
@@ -401,7 +499,7 @@ func (s *encryptedState) handleMessage(msg *encryptedMessage, requestMsgID int64
 			return nil, false, err
 		}
 		s.serverSalt = int64(newSalt)
-		return nil, false, fmt.Errorf("mtproto: bad_server_salt error_code=%d new_salt=%d", errorCode, int64(newSalt))
+		return nil, false, &BadServerSaltError{BadMessageID: int64(badMsgID), BadSeqNo: int32(badSeqNo), Code: int32(errorCode), NewSalt: int64(newSalt)}
 	case constructorBadMsgNotification:
 		badMsgID, err := r.long()
 		if err != nil {
@@ -415,7 +513,7 @@ func (s *encryptedState) handleMessage(msg *encryptedMessage, requestMsgID int64
 		if err != nil {
 			return nil, false, err
 		}
-		return nil, false, fmt.Errorf("mtproto: bad_msg_notification bad_msg_id=%d seq=%d code=%d", badMsgID, badSeqNo, errorCode)
+		return nil, false, &BadMessageError{BadMessageID: int64(badMsgID), BadSeqNo: int32(badSeqNo), Code: int32(errorCode)}
 	case constructorMsgsAck:
 		return nil, false, nil
 	default:

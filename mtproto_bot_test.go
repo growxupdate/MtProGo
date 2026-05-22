@@ -40,8 +40,8 @@ func TestMTProtoBotTextMessageDispatchShape(t *testing.T) {
 	if !ok || peer.AccessHash != 99 {
 		t.Fatalf("peer not stored: %+v ok=%v", peer, ok)
 	}
-	msg := bot.mtprotoTextMessageToUpdate(mtproto.TextMessage{ID: 5, ChatID: 42, FromID: 42, Text: "/start"})
-	if msg.ID != 5 || msg.ChatID != 42 || msg.FromID != 42 || msg.Text != "/start" {
+	msg := bot.mtprotoTextMessageToUpdate(mtproto.TextMessage{ID: 5, ChatID: 42, FromID: 42, ChatKind: "user", FromKind: "user", Text: "/start"})
+	if msg.ID != 5 || msg.ChatID != 42 || msg.FromID != 42 || msg.ChatType != updates.ChatPrivate || msg.Text != "/start" {
 		t.Fatalf("bad message: %+v", msg)
 	}
 	if _, ok := msg.Raw.(mtproto.TextMessage); !ok {

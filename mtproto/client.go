@@ -15,6 +15,8 @@ import (
 const (
 	constructorAuthImportBotAuthorization = 0x67a3ff2c
 	constructorMessagesSendMessage        = 0xfe05dc9a
+	constructorMessagesEditMessage        = 0xdfd14005
+	constructorMessagesDeleteMessages     = 0xe58e95d2
 	constructorInputPeerEmpty             = 0x7f3b18ea
 	constructorInputPeerSelf              = 0x7da07ec9
 	constructorInputPeerChat              = 0x35a95cb9
@@ -260,6 +262,58 @@ func (c *EncryptedClient) MessagesSendMessage(ctx context.Context, peer InputPee
 	return result, nil
 }
 
+// MessagesSendMessageToPeer sends a plain text message to a parsed peer reference.
+func (c *EncryptedClient) MessagesSendMessageToPeer(ctx context.Context, peer PeerRef, text string) (*InvokeResult, error) {
+	input, ok := peer.InputPeer()
+	if !ok {
+		return nil, fmt.Errorf("mtproto: peer %d (%s) is missing access data", peer.ID, peer.Kind)
+	}
+	return c.MessagesSendMessage(ctx, input, text)
+}
+
+// MessagesEditMessage edits a text message when Telegram permits the bot/user to edit it.
+func (c *EncryptedClient) MessagesEditMessage(ctx context.Context, peer InputPeer, messageID int32, text string) (*InvokeResult, error) {
+	if messageID <= 0 {
+		return nil, errors.New("message id is required")
+	}
+	if strings.TrimSpace(text) == "" {
+		return nil, errors.New("message text is required")
+	}
+	query, err := makeMessagesEditMessageQuery(peer, messageID, text)
+	if err != nil {
+		return nil, err
+	}
+	result, err := c.Invoke(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	result.Message = "messages.editMessage succeeded over encrypted MTProto"
+	return result, nil
+}
+
+// MessagesEditMessageToPeer edits a message for a parsed peer reference.
+func (c *EncryptedClient) MessagesEditMessageToPeer(ctx context.Context, peer PeerRef, messageID int32, text string) (*InvokeResult, error) {
+	input, ok := peer.InputPeer()
+	if !ok {
+		return nil, fmt.Errorf("mtproto: peer %d (%s) is missing access data", peer.ID, peer.Kind)
+	}
+	return c.MessagesEditMessage(ctx, input, messageID, text)
+}
+
+// MessagesDeleteMessages deletes message IDs from the current dialog context where Telegram permits it.
+func (c *EncryptedClient) MessagesDeleteMessages(ctx context.Context, revoke bool, ids ...int32) (*InvokeResult, error) {
+	if len(ids) == 0 {
+		return nil, errors.New("at least one message id is required")
+	}
+	query := makeMessagesDeleteMessagesQuery(revoke, ids...)
+	result, err := c.Invoke(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	result.Message = "messages.deleteMessages succeeded over encrypted MTProto"
+	return result, nil
+}
+
 func makeImportBotAuthorizationQuery(apiID int, apiHash, botToken string) []byte {
 	var inner tlBuffer
 	inner.putInt(constructorAuthImportBotAuthorization)
@@ -280,6 +334,34 @@ func makeMessagesSendMessageQuery(peer InputPeer, text string) ([]byte, error) {
 	b.putString(text)
 	b.putLong(uint64(randomInt64()))
 	return b.bytes(), nil
+}
+
+func makeMessagesEditMessageQuery(peer InputPeer, messageID int32, text string) ([]byte, error) {
+	var b tlBuffer
+	b.putInt(constructorMessagesEditMessage)
+	b.putInt(1 << 11) // flags.11?message
+	if err := peer.encode(&b); err != nil {
+		return nil, err
+	}
+	b.putInt(uint32(messageID))
+	b.putString(text)
+	return b.bytes(), nil
+}
+
+func makeMessagesDeleteMessagesQuery(revoke bool, ids ...int32) []byte {
+	var b tlBuffer
+	b.putInt(constructorMessagesDeleteMessages)
+	var flags uint32
+	if revoke {
+		flags |= 1
+	}
+	b.putInt(flags)
+	b.putInt(constructorVector)
+	b.putInt(uint32(len(ids)))
+	for _, id := range ids {
+		b.putInt(uint32(id))
+	}
+	return b.bytes()
 }
 
 func wrapWithLayerAndInitConnection(apiID int, appVersion string, query []byte) []byte {
@@ -349,4 +431,4 @@ func ConstructorName(id uint32) string {
 	}
 }
 
-const appVersionV12 = "v13.0.0-dev"
+const appVersionV12 = "v14.0.0-dev"

@@ -4,7 +4,7 @@ MtProGo is a pure Go Telegram client project focused on a clean API, low memory 
 
 This repository intentionally does **not** import or wrap TDLib, gotd, tgbotapi, Telethon, Pyrogram, Kurigram, or any other Telegram client library.
 
-## Current V13 status
+## Current V16 status
 
 Working now:
 
@@ -17,17 +17,18 @@ Working now:
 - Pure MTProto account phone-code login
 - Pure MTProto SRP 2FA password login
 - Experimental pure MTProto bot updates loop using `updates.getDifference`
-- Experimental pure MTProto private `/start`, `/ping`, `/help` receive/reply example
+- Experimental pure MTProto private/basic-group/supergroup text update parsing and reply helpers
+- Parses `updateNewMessage` and `updateNewChannelMessage` from `updates.getDifference`
 - Persistent MTProto sessions for bots and user accounts
 - File sessions, encrypted file sessions, and copy-paste string sessions
 - Configurable update handling, bounded message cache, and bounded peer cache
+- V16 reliability hardening: persisted update state, persisted peer cache, bad-salt/bad-msg retry, reconnect backoff, optional FLOOD_WAIT auto sleep
 - No external Go dependencies
 
 Still in progress:
 
 - Full generated TL API
 - Full generated MTProto updates parser for every update type
-- Group/channel peer parsing for MTProto updates
 - High-level Kurigram/Pyrogram-style helpers for every Telegram method
 - Media upload/download helpers
 
@@ -59,10 +60,17 @@ bot := mtprogo.Must(mtprogo.NewMTProtoBot(
     mtprogo.WithMessageCacheSize(1000),
     mtprogo.WithPeerCacheSize(1000),
     mtprogo.WithMessageCacheCommands("start", "ping", "help"),
+    mtprogo.WithAutoReconnect(true),
+    mtprogo.WithReconnectBackoff(time.Second, 30*time.Second),
+    mtprogo.WithAutoFloodWait(true, 60*time.Second),
 ))
 
 bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
     return m.Reply(ctx, "Hello from pure MTProto")
+})
+
+bot.OnMessage(filters.And(filters.Command("ping"), filters.Group), func(ctx context.Context, m *updates.Message) error {
+    return m.Reply(ctx, "group pong")
 })
 
 mtprogo.Must0(bot.Run(context.Background()))
@@ -98,6 +106,67 @@ Clear saved session:
 err := bot.ClearSession(context.Background())
 ```
 
+
+## MTProto chat helpers and production reliability in V16
+
+V16 keeps normalized chat types and adds Bot-API-style chat IDs for high-level handlers:
+
+```go
+bot.OnMessage(filters.Command("chatid"), func(ctx context.Context, m *updates.Message) error {
+    return bot.SendMessage(ctx, m.ChatID, fmt.Sprintf("chat_id=%d type=%s", m.ChatID, m.ChatType))
+})
+
+bot.OnMessage(filters.And(filters.Command("ping"), filters.Private), privateHandler)
+bot.OnMessage(filters.And(filters.Command("ping"), filters.Group), groupHandler)
+bot.OnMessage(filters.And(filters.Command("ping"), filters.Channel), channelHandler)
+```
+
+Available message helpers:
+
+```go
+m.Reply(ctx, "text")
+m.Edit(ctx, "edited text")
+m.Delete(ctx)
+bot.SendMessage(ctx, chatID, "text")
+bot.EditMessage(ctx, chatID, messageID, "edited text")
+bot.DeleteMessages(ctx, chatID, messageID)
+```
+
+The MTProto update parser now recognizes `PeerUser`, `PeerChat`, and `PeerChannel`. Channel/supergroup sending requires the peer access hash to be present in the cached updates payload.
+
+High-level `Message.ChatID` values now match Telegram/Bot-API style IDs:
+
+- Private: `123456789`
+- Basic group: `-123456789`
+- Supergroup/channel: `-100123456789`
+
+The raw positive MTProto peer ID remains available as `Message.RawChatID`. You can pass the public `Message.ChatID` back to `Reply`, `SendMessage`, and `EditMessage`; MtProGo resolves it to the cached raw peer internally.
+
+
+## V16 production reliability controls
+
+V16 stores the current `pts/qts/date/seq` update state and the lightweight peer cache inside the bot session file. On restart, MtProGo can resume from the saved update state instead of always starting from a fresh `updates.getState`. It also keeps saved access hashes for peers already seen in updates, which avoids losing group/supergroup send ability after restart.
+
+```go
+bot := mtprogo.Must(mtprogo.NewMTProtoBot(
+    mtprogo.MTProtoBotConfig{APIID: apiID, APIHash: apiHash, Token: botToken},
+    mtprogo.WithSessionFile("bot.session"),
+    mtprogo.WithAutoReconnect(true),
+    mtprogo.WithReconnectBackoff(time.Second, 30*time.Second),
+    mtprogo.WithAutoFloodWait(true, 60*time.Second),
+    mtprogo.WithDebug(false),
+))
+```
+
+Reliability pieces added in V16:
+
+- `bad_server_salt` updates the server salt and automatically retries the request
+- retriable `bad_msg_notification` codes retry the request
+- `FLOOD_WAIT_X` is exposed as a typed helper and can be auto-slept up to your limit
+- temporary network errors reconnect with exponential backoff
+- session save happens during run and on graceful shutdown
+- update state and peer cache are persisted with the MTProto auth key
+
 ## User account persistent session
 
 ```bash
@@ -119,7 +188,7 @@ bot := mtprogo.Must(mtprogo.NewBotWithOptions(
 ))
 
 bot.OnMessage(filters.Command("start"), func(ctx context.Context, m *updates.Message) error {
-    return m.Reply(ctx, "Hello from MtProGo V13 🚀")
+    return m.Reply(ctx, "Hello from MtProGo V16 🚀")
 })
 
 mtprogo.Must0(bot.Run(context.Background()))
@@ -176,6 +245,7 @@ go run ./examples/mtproto_auth
 go run ./examples/mtproto_config
 go run ./examples/mtproto_bot_login
 go run ./examples/mtproto_bot_updates
+go run ./examples/mtproto_chat_helpers
 go run ./examples/mtproto_account_login
 go run ./examples/mtproto_session_tools
 ```
@@ -208,3 +278,18 @@ github.com/growxupdate/MtProGo
 ```
 
 Expected external Telegram library audit: empty output.
+
+
+## V14.2 group/supergroup access-hash fix
+
+MtProGo now scans the current layer `channel#fe685355` constructor from update chat vectors, while keeping legacy constructor support. This fixes supergroup replies that were received correctly but failed with missing channel access data.
+
+## V15 chat ID normalization
+
+MtProGo now exposes public chat IDs the same way Telegram/Bot API users expect:
+
+- Private: `123456789`
+- Basic group: `-123456789`
+- Supergroup/channel: `-100123456789`
+
+`Message.RawChatID` keeps the original positive MTProto peer id for debugging and low-level work. High-level methods such as `Message.Reply`, `bot.SendMessage`, and `bot.EditMessage` accept the normalized public `ChatID` and resolve it back to the cached MTProto peer internally.

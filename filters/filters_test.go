@@ -17,3 +17,18 @@ func TestCommand(t *testing.T) {
 		t.Fatal("unexpected command match")
 	}
 }
+
+func TestChatTypeFilters(t *testing.T) {
+	if !Private(&updates.Message{ChatType: updates.ChatPrivate}) {
+		t.Fatal("private filter should match private chat")
+	}
+	if !Group(&updates.Message{ChatType: updates.ChatGroup}) {
+		t.Fatal("group filter should match group chat")
+	}
+	if !Channel(&updates.Message{ChatType: updates.ChatChannel}) {
+		t.Fatal("channel filter should match channel chat")
+	}
+	if Private(&updates.Message{ChatType: updates.ChatGroup}) {
+		t.Fatal("private filter should not match group chat")
+	}
+}

@@ -66,3 +66,20 @@ func TestInputPeerValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMakeMessagesEditAndDeleteQueries(t *testing.T) {
+	ed, err := makeMessagesEditMessageQuery(InputPeerChat(123), 7, "edited")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := binary.LittleEndian.Uint32(ed[:4]); got != constructorMessagesEditMessage {
+		t.Fatalf("edit constructor = %#x", got)
+	}
+	del := makeMessagesDeleteMessagesQuery(true, 7, 8)
+	if got := binary.LittleEndian.Uint32(del[:4]); got != constructorMessagesDeleteMessages {
+		t.Fatalf("delete constructor = %#x", got)
+	}
+	if flags := binary.LittleEndian.Uint32(del[4:8]); flags != 1 {
+		t.Fatalf("delete flags = %d", flags)
+	}
+}

@@ -3,6 +3,7 @@ package mtprogo
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/growxupdate/MtProGo/filters"
 	"github.com/growxupdate/MtProGo/mtproto"
@@ -32,6 +33,21 @@ type Config struct {
 	PeerCacheSize int
 	// UpdateQueueSize reserves future async update queue capacity. Default: 256.
 	UpdateQueueSize int
+
+	// Debug enables lightweight runtime logs. Default: false.
+	Debug bool
+	// AutoReconnect reconnects MTProto runtimes on temporary network errors. Default: true.
+	AutoReconnect bool
+	// MaxReconnectAttempts limits consecutive reconnect attempts. Use 0 for unlimited.
+	MaxReconnectAttempts int
+	// ReconnectInitialBackoff is the first reconnect delay. Default: 1 second.
+	ReconnectInitialBackoff time.Duration
+	// ReconnectMaxBackoff caps reconnect delay. Default: 30 seconds.
+	ReconnectMaxBackoff time.Duration
+	// AutoFloodWait sleeps and retries on FLOOD_WAIT when the wait is <= MaxFloodWait. Default: false.
+	AutoFloodWait bool
+	// MaxFloodWait caps AutoFloodWait. Default: 60 seconds.
+	MaxFloodWait time.Duration
 }
 
 // MessageCacheMode aliases the updates cache policy type for user-facing options.
@@ -70,15 +86,19 @@ func New(apiID int, apiHash string, opts ...Option) (*Client, error) {
 	}
 
 	cfg := Config{
-		APIID:            apiID,
-		APIHash:          apiHash,
-		Session:          MemorySession(),
-		SessionName:      "default",
-		Updates:          true,
-		MessageCacheSize: updates.DefaultMessageCacheSize,
-		MessageCacheMode: updates.CacheMatchedMessages,
-		PeerCacheSize:    updates.DefaultPeerCacheSize,
-		UpdateQueueSize:  256,
+		APIID:                   apiID,
+		APIHash:                 apiHash,
+		Session:                 MemorySession(),
+		SessionName:             "default",
+		Updates:                 true,
+		MessageCacheSize:        updates.DefaultMessageCacheSize,
+		MessageCacheMode:        updates.CacheMatchedMessages,
+		PeerCacheSize:           updates.DefaultPeerCacheSize,
+		UpdateQueueSize:         256,
+		AutoReconnect:           true,
+		ReconnectInitialBackoff: time.Second,
+		ReconnectMaxBackoff:     30 * time.Second,
+		MaxFloodWait:            60 * time.Second,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -93,6 +113,15 @@ func New(apiID int, apiHash string, opts ...Option) (*Client, error) {
 	}
 	if cfg.UpdateQueueSize < 0 {
 		cfg.UpdateQueueSize = 0
+	}
+	if cfg.ReconnectInitialBackoff <= 0 {
+		cfg.ReconnectInitialBackoff = time.Second
+	}
+	if cfg.ReconnectMaxBackoff <= 0 {
+		cfg.ReconnectMaxBackoff = 30 * time.Second
+	}
+	if cfg.MaxFloodWait <= 0 {
+		cfg.MaxFloodWait = 60 * time.Second
 	}
 
 	return &Client{
@@ -230,6 +259,43 @@ func WithPeerCacheSize(size int) Option {
 // WithUpdateQueueSize sets future async update queue capacity.
 func WithUpdateQueueSize(size int) Option {
 	return func(c *Config) { c.UpdateQueueSize = size }
+}
+
+// WithDebug enables lightweight runtime logs for MTProto runtimes.
+func WithDebug(enabled bool) Option {
+	return func(c *Config) { c.Debug = enabled }
+}
+
+// WithAutoReconnect enables or disables automatic reconnect on temporary network errors.
+func WithAutoReconnect(enabled bool) Option {
+	return func(c *Config) { c.AutoReconnect = enabled }
+}
+
+// WithReconnectBackoff configures reconnect retry delays.
+func WithReconnectBackoff(initial, max time.Duration) Option {
+	return func(c *Config) {
+		if initial > 0 {
+			c.ReconnectInitialBackoff = initial
+		}
+		if max > 0 {
+			c.ReconnectMaxBackoff = max
+		}
+	}
+}
+
+// WithMaxReconnectAttempts limits consecutive reconnect attempts. Use 0 for unlimited.
+func WithMaxReconnectAttempts(n int) Option {
+	return func(c *Config) { c.MaxReconnectAttempts = n }
+}
+
+// WithAutoFloodWait sleeps and retries on FLOOD_WAIT when the wait is <= maxWait.
+func WithAutoFloodWait(enabled bool, maxWait time.Duration) Option {
+	return func(c *Config) {
+		c.AutoFloodWait = enabled
+		if maxWait > 0 {
+			c.MaxFloodWait = maxWait
+		}
+	}
 }
 
 // OnMessage registers a message handler.

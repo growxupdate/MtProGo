@@ -39,3 +39,48 @@ func TestScanUpdatesState(t *testing.T) {
 		t.Fatalf("unexpected state: %+v", state)
 	}
 }
+
+func TestScanPeerRefsChatAndChannel(t *testing.T) {
+	var b []byte
+	b = binary.LittleEndian.AppendUint32(b, constructorChat)
+	b = binary.LittleEndian.AppendUint32(b, 0) // flags
+	b = binary.LittleEndian.AppendUint64(b, 222)
+
+	b = binary.LittleEndian.AppendUint32(b, constructorChannel)
+	b = binary.LittleEndian.AppendUint32(b, 1<<13) // flags.13 access_hash
+	b = binary.LittleEndian.AppendUint32(b, 0)     // flags2
+	b = binary.LittleEndian.AppendUint64(b, 333)
+	b = binary.LittleEndian.AppendUint64(b, 444)
+
+	peers := scanPeerRefs(b)
+	if len(peers) != 2 {
+		t.Fatalf("peers=%d %+v", len(peers), peers)
+	}
+	seen := map[string]PeerRef{}
+	for _, peer := range peers {
+		seen[peer.Kind] = peer
+	}
+	if seen["chat"].ID != 222 {
+		t.Fatalf("chat not found: %+v", seen)
+	}
+	if seen["channel"].ID != 333 || seen["channel"].AccessHash != 444 {
+		t.Fatalf("channel not found: %+v", seen)
+	}
+}
+
+func TestScanPeerRefsLegacyChannelConstructor(t *testing.T) {
+	var b []byte
+	b = binary.LittleEndian.AppendUint32(b, constructorChannelLegacy)
+	b = binary.LittleEndian.AppendUint32(b, (1<<13)|(1<<8)) // access_hash + megagroup
+	b = binary.LittleEndian.AppendUint32(b, 0)              // flags2
+	b = binary.LittleEndian.AppendUint64(b, 333)
+	b = binary.LittleEndian.AppendUint64(b, 444)
+
+	peers := scanPeerRefs(b)
+	if len(peers) != 1 {
+		t.Fatalf("peers=%d %+v", len(peers), peers)
+	}
+	if peers[0].ID != 333 || peers[0].AccessHash != 444 || peers[0].Kind != "supergroup" {
+		t.Fatalf("unexpected legacy channel peer: %+v", peers[0])
+	}
+}

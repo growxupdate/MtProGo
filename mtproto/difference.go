@@ -18,6 +18,8 @@ const (
 	constructorPeerChat                = 0x36c6019a
 	constructorPeerChannel             = 0xa2a5371e
 	constructorMessageEntityBotCommand = 0x6cef8ac7
+	constructorUpdateNewMessage        = 0x1f2b0afd
+	constructorUpdateNewChannelMessage = 0x62ba04d9
 )
 
 // DifferenceResult is a minimal parsed result of updates.getDifference.
@@ -25,18 +27,23 @@ type DifferenceResult struct {
 	Constructor uint32
 	State       *UpdatesState
 	Messages    []TextMessage
-	Users       []PeerRef
-	Raw         []byte
+	// Peers contains user/chat/channel references scanned from the difference body.
+	Peers []PeerRef
+	// Users is kept for backward compatibility and contains the same values as Peers.
+	Users []PeerRef
+	Raw   []byte
 }
 
 // TextMessage is a lightweight text message parsed from updates.Difference.
 type TextMessage struct {
-	ID     int32
-	ChatID int64
-	FromID int64
-	Date   int32
-	Text   string
-	Raw    []byte
+	ID       int32
+	ChatID   int64
+	FromID   int64
+	ChatKind string
+	FromKind string
+	Date     int32
+	Text     string
+	Raw      []byte
 }
 
 // UpdatesGetDifference calls updates.getDifference using the supplied state.
@@ -79,7 +86,8 @@ func parseDifferenceResult(body []byte) (*DifferenceResult, error) {
 		return nil, err
 	}
 	out := &DifferenceResult{Constructor: constructor, Raw: append([]byte(nil), body...)}
-	out.Users = scanUserRefs(body)
+	out.Peers = scanPeerRefs(body)
+	out.Users = out.Peers
 	if scannedState := scanUpdatesState(body); scannedState != nil {
 		out.State = scannedState
 	}
@@ -108,14 +116,97 @@ func parseDifferenceResult(body []byte) (*DifferenceResult, error) {
 			// Keep the raw body available even if a future Message variant is not parsed yet.
 			return out, nil
 		}
-		out.Messages = messages
-		// V12 scans the raw difference body for users/access_hash and final updates.state
-		// so the high-level MTProto bot loop can reply to private messages while the
-		// full generated TL parser is still being built.
+		out.Messages = append(out.Messages, messages...)
+
+		// updates.difference contains:
+		//   new_messages:Vector<Message>
+		//   new_encrypted_messages:Vector<EncryptedMessage>
+		//   other_updates:Vector<Update>
+		//   chats:Vector<Chat> users:Vector<User> state:updates.State
+		// In private chats Telegram often puts new text messages in new_messages,
+		// while supergroups/channels commonly arrive as updateNewChannelMessage in
+		// other_updates. Parse that vector as well so handlers work in groups.
+		if err := skipEncryptedMessageVector(r); err != nil {
+			return out, nil
+		}
+		updateMessages, err := parseUpdateVector(r)
+		if err != nil {
+			return out, nil
+		}
+		out.Messages = append(out.Messages, updateMessages...)
+
+		// V12+ scans the raw difference body for users/chats/channels access_hash and
+		// final updates.state so the high-level loop can reply while the full TL
+		// generated parser is still being built.
 		return out, nil
 	default:
 		return nil, fmt.Errorf("mtproto: expected updates.Difference, got 0x%08x", constructor)
 	}
+}
+
+func skipEncryptedMessageVector(r *tlReader) error {
+	vector, err := r.int()
+	if err != nil {
+		return err
+	}
+	if vector != constructorVector {
+		return fmt.Errorf("mtproto: expected encrypted messages vector, got 0x%08x", vector)
+	}
+	count, err := r.int()
+	if err != nil {
+		return err
+	}
+	// Bot/user message update polling usually returns an empty encrypted-message
+	// vector. A full encrypted chat parser is outside this lightweight runtime.
+	if count != 0 {
+		return fmt.Errorf("mtproto: encrypted message vector with %d items is not supported yet", count)
+	}
+	return nil
+}
+
+func parseUpdateVector(r *tlReader) ([]TextMessage, error) {
+	vector, err := r.int()
+	if err != nil {
+		return nil, err
+	}
+	if vector != constructorVector {
+		return nil, fmt.Errorf("mtproto: expected updates vector, got 0x%08x", vector)
+	}
+	count, err := r.int()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TextMessage, 0, count)
+	for i := 0; i < int(count); i++ {
+		constructor, err := r.int()
+		if err != nil {
+			return out, err
+		}
+		switch constructor {
+		case constructorUpdateNewMessage, constructorUpdateNewChannelMessage:
+			start := r.off
+			msg, ok, err := parseTextMessage(r)
+			if err != nil {
+				return out, err
+			}
+			if _, err := r.int(); err != nil { // pts
+				return out, err
+			}
+			if _, err := r.int(); err != nil { // pts_count
+				return out, err
+			}
+			if ok {
+				msg.Raw = append([]byte(nil), r.buf[start:r.off]...)
+				out = append(out, msg)
+			}
+		default:
+			// This tiny parser only needs message updates for the high-level handler.
+			// Unknown Update constructors cannot be safely skipped without full schema
+			// generation, so stop parsing updates but keep messages parsed so far.
+			return out, nil
+		}
+	}
+	return out, nil
 }
 
 func parseMessageVector(r *tlReader) ([]TextMessage, error) {
@@ -179,22 +270,26 @@ func parseTextMessage(r *tlReader) (TextMessage, bool, error) {
 			return TextMessage{}, false, err
 		}
 		var fromID int64
+		var fromKind string
 		if flags&(1<<8) != 0 {
 			peer, err := parsePeer(r)
 			if err != nil {
 				return TextMessage{}, false, err
 			}
-			fromID = peer
+			fromID = peer.ID
+			fromKind = peer.Kind
 		}
 		if flags&(1<<29) != 0 {
 			if _, err := r.int(); err != nil {
 				return TextMessage{}, false, err
 			}
 		}
-		chatID, err := parsePeer(r)
+		chatPeer, err := parsePeer(r)
 		if err != nil {
 			return TextMessage{}, false, err
 		}
+		chatID := chatPeer.ID
+		chatKind := chatPeer.Kind
 		if flags&(1<<28) != 0 {
 			if _, err := parsePeer(r); err != nil {
 				return TextMessage{}, false, err
@@ -300,27 +395,36 @@ func parseTextMessage(r *tlReader) (TextMessage, bool, error) {
 		if flags2&(1<<7) != 0 {
 			return TextMessage{}, false, fmt.Errorf("mtproto: suggested_post parsing not implemented")
 		}
-		return TextMessage{ID: int32(id), ChatID: chatID, FromID: fromID, Date: int32(date), Text: text}, true, nil
+		return TextMessage{ID: int32(id), ChatID: chatID, FromID: fromID, ChatKind: chatKind, FromKind: fromKind, Date: int32(date), Text: text}, true, nil
 	default:
 		return TextMessage{}, false, fmt.Errorf("mtproto: unsupported Message constructor 0x%08x", constructor)
 	}
 }
 
-func parsePeer(r *tlReader) (int64, error) {
+type parsedPeer struct {
+	ID   int64
+	Kind string
+}
+
+func parsePeer(r *tlReader) (parsedPeer, error) {
 	constructor, err := r.int()
 	if err != nil {
-		return 0, err
+		return parsedPeer{}, err
 	}
 	id, err := r.long()
 	if err != nil {
-		return 0, err
+		return parsedPeer{}, err
 	}
 	v := int64(id)
 	switch constructor {
-	case constructorPeerUser, constructorPeerChat, constructorPeerChannel:
-		return v, nil
+	case constructorPeerUser:
+		return parsedPeer{ID: v, Kind: "user"}, nil
+	case constructorPeerChat:
+		return parsedPeer{ID: v, Kind: "chat"}, nil
+	case constructorPeerChannel:
+		return parsedPeer{ID: v, Kind: "channel"}, nil
 	default:
-		return 0, fmt.Errorf("mtproto: unsupported Peer constructor 0x%08x", constructor)
+		return parsedPeer{}, fmt.Errorf("mtproto: unsupported Peer constructor 0x%08x", constructor)
 	}
 }
 
